@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morpion 20×20 - Training Bot</title>
+    <style>
+        :root{--bg:#0b1120;--surface:#1e293b;--primary:#6366f1;--secondary:#ec4899;--success:#10b981;--warning:#f59e0b;--danger:#ef4444;--text:#f8fafc;--cell-size:min(4.5vw,28px)}
+        *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif}
+        body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;justify-content:center;align-items:center;overflow:hidden}
+        .app{width:100%;max-width:900px;height:100vh;display:flex;flex-direction:column;padding:12px;gap:12px}
+        
+        .header{background:var(--surface);border-radius:12px;padding:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+        .nav-link a{color:var(--primary);text-decoration:none;font-weight:700;font-size:.9rem;padding:8px 16px;border:1px solid var(--primary);border-radius:8px;transition:.2s;display:inline-block}
+        .nav-link a:hover{background:var(--primary);color:#fff}
+        .title{font-size:1.3rem;font-weight:800;color:var(--warning)}
+
+        .panel{background:var(--surface);border-radius:12px;padding:16px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:center}
+        select{background:#0f172a;border:1px solid #334155;color:#fff;padding:10px 16px;border-radius:8px;font-weight:600;cursor:pointer}
+        .scores-grid{display:flex;gap:16px;font-size:.9rem}
+        .sc-item{display:flex;flex-direction:column;align-items:center;min-width:60px}
+        .sc-lbl{font-size:.7rem;opacity:.7;text-transform:uppercase;letter-spacing:1px}
+        .sc-val{font-size:1.4rem;font-weight:800;line-height:1.2}
+        .sc-x{color:var(--primary)}.sc-o{color:var(--secondary)}.sc-d{color:#94a3b8}
+
+        .game{flex:1;display:flex;flex-direction:column;background:var(--surface);border-radius:12px;padding:12px;min-height:0}
+        .status{background:#0f172a;padding:10px;border-radius:8px;text-align:center;font-weight:600;margin-bottom:8px;min-height:44px;display:flex;align-items:center;justify-content:center;border:1px solid #334155}
+        .vp{flex:1;background:#0f172a;border-radius:12px;border:2px solid #334155;overflow:auto;position:relative;touch-action:pan-x pan-y;scrollbar-width:thin;scrollbar-color:#334155 #0f172a}
+        .board{display:grid;grid-template-columns:repeat(20,var(--cell-size));gap:2px;padding:8px;width:max-content;margin:auto;transform-origin:center center}
+        
+        /* Correction ici : ajout de position: relative */
+        .cell{width:var(--cell-size);height:var(--cell-size);background:#1e293b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:calc(var(--cell-size)*.6);cursor:pointer;user-select:none;transition:.15s;position:relative}
+        
+        .cell:hover:not(.taken){background:#334155}
+        .cell.x{color:var(--primary);background:rgba(99,102,241,.15)}
+        .cell.o{color:var(--secondary);background:rgba(236,72,153,.15)}
+        .cell.last::after{content:'';position:absolute;inset:2px;border:2px solid var(--warning);border-radius:3px;animation:pulse 2s infinite;z-index:1}
+        .cell.win{background:var(--success)!important;color:#042f1a;transform:scale(1.05);z-index:2;box-shadow:0 0 15px rgba(16,185,129,.6)}
+        .ctrls{display:flex;gap:8px;margin-top:8px;justify-content:center}
+        .btn{padding:10px 16px;border:none;border-radius:8px;font-weight:600;cursor:pointer;transition:.2s;font-size:.9rem}
+        .btn-g{background:var(--success);color:#fff}.btn-s{background:#334155;color:#fff}.btn-r{background:var(--danger);color:#fff}
+        .btn:hover{filter:brightness(1.1);transform:translateY(-1px)}
+        @keyframes pulse{0%,100%{opacity:.8}50%{opacity:.3}}
+        @media(max-width:600px){.header{flex-direction:column;text-align:center}.scores-grid{gap:10px}.sc-val{font-size:1.1rem}}
+    </style>
+</head>
+<body>
+    <div class="app">
+        <div class="header">
+            <div class="title">🤖 Training Bot</div>
+            <div class="nav-link"><a href="index.html">🌐 Retour Arena Online</a></div>
+        </div>
+
+        <div class="panel">
+            <label style="font-weight:600">Difficulté :</label>
+            <select id="diff" onchange="bot.reset()">
+                <option value="easy">Facile</option>
+                <option value="medium" selected>Moyen</option>
+                <option value="hard">Difficile</option>
+            </select>
+            <button class="btn btn-g" onclick="bot.reset()">🔄 Nouvelle Partie</button>
+            <button class="btn btn-r" onclick="bot.clearScores()">🗑️ Reset Scores</button>
+            <div class="scores-grid">
+                <div class="sc-item"><span class="sc-lbl">Vous (X)</span><span class="sc-val sc-x" id="sX">0</span></div>
+                <div class="sc-item"><span class="sc-lbl">Nuls</span><span class="sc-val sc-d" id="sD">0</span></div>
+                <div class="sc-item"><span class="sc-lbl">Bot (O)</span><span class="sc-val sc-o" id="sO">0</span></div>
+            </div>
+        </div>
+
+        <div class="game">
+            <div class="status" id="st">À vous de jouer (X)</div>
+            <div class="vp" id="vp"><div class="board" id="bd"></div></div>
+            <div class="ctrls">
+                <button class="btn btn-s" onclick="bot.zoom(0.15)">➕ Zoom</button>
+                <button class="btn btn-s" onclick="bot.zoom(-0.15)">➖ Zoom</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const S=20,W=6,DIRS=[[0,1],[1,0],[1,1],[1,-1]];
+        const SC={FIVE:1000000,OPEN_FOUR:500000,FOUR:100000,OPEN_THREE:25000,THREE:4000,OPEN_TWO:800,TWO:150,ONE:10};
+
+        class Bot{
+            constructor(){
+                this.bd=Array(S*S).fill(null);this.act=true;this.aiTurn=false;this.diff='medium';this.z=1;this.last=null;
+                this.sc=JSON.parse(localStorage.getItem('m_train_sc'))||{X:0,O:0,D:0};
+                this.updScoreUI();this.mkBoard();
+            }
+            mkBoard(){const b=document.getElementById('bd');b.innerHTML='';for(let i=0;i<S*S;i++){const c=document.createElement('div');c.className='cell';c.dataset.i=i;c.onclick=()=>this.click(i);b.appendChild(c)}}
+            reset(){this.bd.fill(null);this.act=true;this.aiTurn=false;this.last=null;this.diff=document.getElementById('diff').value;document.getElementById('st').textContent='À vous de jouer (X)';document.querySelectorAll('.cell').forEach(c=>{c.className='cell';c.textContent='';c.classList.remove('x','o','taken','last','win')})}
+            clearScores(){this.sc={X:0,O:0,D:0};this.save();this.updScoreUI()}
+            save(){localStorage.setItem('m_train_sc',JSON.stringify(this.sc))}
+            updScoreUI(){document.getElementById('sX').textContent=this.sc.X;document.getElementById('sO').textContent=this.sc.O;document.getElementById('sD').textContent=this.sc.D}
+            zoom(d){this.z=Math.max(.5,Math.min(2.5,this.z+d));document.getElementById('bd').style.transform=`scale(${this.z})`}
+            
+            click(i){if(!this.act||this.aiTurn||this.bd[i])return;this.move(i,'X')}
+            
+            move(i,p){
+                this.bd[i]=p;const c=document.querySelector(`.cell[data-i="${i}"]`);c.textContent=p;c.classList.add(p.toLowerCase(),'taken');
+                if(this.last!==null)document.querySelector(`.cell[data-i="${this.last}"]`)?.classList.remove('last');
+                c.classList.add('last');this.last=i;
+                
+                const wl=this.checkWin(i,p);
+                if(wl){wl.forEach(x=>document.querySelector(`.cell[data-i="${x}"]`)?.classList.add('win'));this.act=false;this.sc[p]++;this.save();this.updScoreUI();document.getElementById('st').innerHTML=p==='X'?'<span style="color:var(--success)">🎉 Victoire !</span>':'<span style="color:var(--danger)">💀 Le Bot gagne...</span>';return}
+                if(!this.bd.includes(null)){this.act=false;this.sc.D++;this.save();this.updScoreUI();document.getElementById('st').textContent='🤝 Match Nul';return}
+                
+                if(p==='X'){this.aiTurn=true;document.getElementById('st').textContent='🤖 Le Bot réfléchit...';setTimeout(()=>this.playAI(),250)}
+                else{this.aiTurn=false;document.getElementById('st').textContent='À vous de jouer (X)'}
+            }
+
+            checkWin(li,p){const r=Math.floor(li/S),c=li%S;for(const[dr,dc]of DIRS){let ln=[li];for(let d=-1;d<=1;d+=2)for(let i=1;i<W;i++){const nr=r+dr*i*d,nc=c+dc*i*d;if(nr<0||nr>=S||nc<0||nc>=S||this.bd[nr*S+nc]!==p)break;ln.push(nr*S+nc)}if(ln.length>=W)return ln.slice(0,W)}return null}
+
+            playAI(){
+                if(!this.act)return;
+                const cands=this.getCands();if(!cands.length)return;
+                const scored=cands.map(i=>({i,s:this.eval(i)}));scored.sort((a,b)=>b.s-a.s);
+                let best;
+                if(this.diff==='easy')best=scored[Math.floor(Math.random()*Math.min(5,scored.length))].i;
+                else if(this.diff==='medium')best=(Math.random()<.8?scored[0]:scored[1]||scored[0]).i;
+                else best=scored[0].i;
+                this.move(best,'O');
+            }
+
+            getCands(){if(this.bd.every(v=>v===null))return[Math.floor(S/2)*S+Math.floor(S/2)];const set=new Set();for(let i=0;i<this.bd.length;i++){if(this.bd[i]){const r=Math.floor(i/S),c=i%S;for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++){const nr=r+dr,nc=c+dc;if(nr>=0&&nr<S&&nc>=0&&nc<S&&this.bd[nr*S+nc]===null)set.add(nr*S+nc)}}}return Array.from(set)}
+
+            eval(idx){const r=Math.floor(idx/S),c=idx%S;let atk=0,def=0,aT=0,dT=0;for(const[dr,dc]of DIRS){const a=this.anDir(r,c,dr,dc,'O');const as=this.scTh(a.c,a.o);atk+=as;if(as>=SC.THREE)aT++;const d=this.anDir(r,c,dr,dc,'X');const ds=this.scTh(d.c,d.o);def+=ds;if(ds>=SC.THREE)dT++}let fk=0;if(aT>=2)fk+=SC.OPEN_FOUR*(aT-1);if(dT>=2)fk+=SC.FOUR*(dT-1);const ct=Math.max(0,20-(Math.abs(r-S/2)+Math.abs(c-S/2)));return atk+Math.floor(def*1.1)+fk+ct}
+
+            anDir(r,c,dr,dc,p){
+                let count=0,open=0;
+                for(let i=1;i<W;i++){
+                    const nr=r+dr*i,nc=c+dc*i;
+                    if(nr<0||nr>=S||nc<0||nc>=S) break;
+                    const v=this.bd[nr*S+nc];
+                    if(v===p) count++;
+                    else { if(v===null) open++; break; }
+                }
+                for(let i=1;i<W;i++){
+                    const nr=r-dr*i,nc=c-dc*i;
+                    if(nr<0||nr>=S||nc<0||nc>=S) break;
+                    const v=this.bd[nr*S+nc];
+                    if(v===p) count++;
+                    else { if(v===null) open++; break; }
+                }
+                return{c:count,o:open}
+            }
+
+            scTh(count,open){if(count>=W-1)return SC.FIVE;if(count===W-2)return open===2?SC.OPEN_FOUR:(open===1?SC.FOUR:0);if(count===W-3)return open===2?SC.OPEN_THREE:(open===1?SC.THREE:0);if(count===W-4)return open===2?SC.OPEN_TWO:(open===1?SC.TWO:0);return count===0&&open>0?SC.ONE:0}
+        }
+        const bot=new Bot();
+    </script>
+</body>
+</html>

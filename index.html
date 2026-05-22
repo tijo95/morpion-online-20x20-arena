@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morpion 20×20 - Arena Online</title>
+    <style>
+        :root{--bg:#0b1120;--surface:#1e293b;--primary:#6366f1;--secondary:#ec4899;--success:#10b981;--warning:#f59e0b;--danger:#ef4444;--text:#f8fafc;--cell-size:min(4.5vw,28px)}
+        *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif}
+        body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;justify-content:center;align-items:center;overflow:hidden}
+        .app{display:flex;width:100%;max-width:1400px;height:100vh;gap:16px;padding:12px}
+        
+        /* SIDEBAR */
+        .sidebar{width:300px;background:var(--surface);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+        .sb-head{padding:16px;border-bottom:1px solid #334155;text-align:center}
+        .online{font-size:.8rem;color:var(--success);font-weight:700;margin-top:4px}
+        .dot{display:inline-block;width:8px;height:8px;background:var(--success);border-radius:50%;margin-right:4px;animation:pulse 2s infinite}
+        .social{padding:12px;border-bottom:1px solid #334155;display:flex;flex-direction:column;gap:8px}
+        .row{display:flex;gap:6px}
+        .row input{flex:1;background:#0f172a;border:1px solid #334155;color:#fff;padding:8px;border-radius:6px;font-size:.85rem}
+        .btn-sm{padding:8px 12px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:.8rem;transition:.2s}
+        .btn-inv{background:var(--primary);color:#fff}
+        .btn-search{background:var(--success);color:#fff;width:100%;padding:12px;font-size:1rem}
+        .btn-search:disabled{background:#334155;cursor:wait}
+        .lb{flex:1;overflow-y:auto;padding:8px;scrollbar-width:thin;scrollbar-color:#334155 transparent}
+        .lb-i{display:flex;align-items:center;padding:8px;margin-bottom:4px;background:#0f172a;border-radius:6px;font-size:.85rem}
+        .lb-r{width:24px;font-weight:700;color:var(--warning)}
+        .lb-n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .lb-s{font-weight:700;color:var(--primary)}
+        .lb-i.me{border:1px solid var(--warning);background:rgba(245,158,11,.1)}
+
+        /* GAME AREA */
+        .game{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--surface);border-radius:12px;padding:12px}
+        .nav-link{text-align:center;margin-bottom:8px}
+        .nav-link a{color:var(--warning);text-decoration:none;font-weight:700;font-size:.9rem;padding:8px 16px;border:1px solid var(--warning);border-radius:8px;transition:.2s;display:inline-block}
+        .nav-link a:hover{background:var(--warning);color:#000}
+        .status{background:#0f172a;padding:10px;border-radius:8px;text-align:center;font-weight:600;margin-bottom:8px;min-height:44px;display:flex;align-items:center;justify-content:center;border:1px solid #334155}
+        .vp{flex:1;background:#0f172a;border-radius:12px;border:2px solid #334155;overflow:auto;position:relative;touch-action:pan-x pan-y;scrollbar-width:thin;scrollbar-color:#334155 #0f172a}
+        .board{display:grid;grid-template-columns:repeat(20,var(--cell-size));gap:2px;padding:8px;width:max-content;margin:auto;transform-origin:center center}
+        .cell{width:var(--cell-size);height:var(--cell-size);background:#1e293b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:calc(var(--cell-size)*.6);cursor:pointer;user-select:none;transition:.15s;position:relative}
+        .cell:hover:not(.taken):not(.off){background:#334155}
+        .cell.x{color:var(--primary);background:rgba(99,102,241,.15)}
+        .cell.o{color:var(--secondary);background:rgba(236,72,153,.15)}
+        .cell.win{background:var(--success)!important;color:#042f1a;transform:scale(1.05);z-index:2;box-shadow:0 0 15px rgba(16,185,129,.6)}
+        .cell.off{cursor:default;opacity:.8}
+        .ctrls{display:flex;gap:8px;margin-top:8px;justify-content:center}
+        .btn{padding:10px 16px;border:none;border-radius:8px;font-weight:600;cursor:pointer;transition:.2s;font-size:.9rem}
+        .btn-p{background:var(--primary);color:#fff}.btn-s{background:#334155;color:#fff}.btn-d{background:var(--danger);color:#fff}
+        .btn:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px)}.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+        /* OVERLAYS */
+        .ov{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+        .mod{background:var(--surface);padding:32px;border-radius:16px;max-width:420px;width:90%;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.5)}
+        .mod h2{margin-bottom:16px;color:var(--warning)}
+        .mod input{width:100%;padding:14px;border-radius:8px;border:2px solid #334155;background:#0f172a;color:#fff;font-size:1.1rem;margin-bottom:16px;text-align:center}
+        .hidden{display:none!important}
+        .notif{position:fixed;top:20px;right:20px;background:var(--surface);border-left:4px solid var(--primary);padding:16px 24px;border-radius:8px;z-index:200;transform:translateX(120%);transition:.3s;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:320px}
+        .notif.show{transform:translateX(0)}.notif.acc{border-color:var(--success)}
+        .n-acts{display:flex;gap:8px;margin-top:10px}
+        @keyframes pulse{0%,100%{opacity:.8}50%{opacity:.3}}
+        @media(max-width:900px){.app{flex-direction:column}.sidebar{width:100%;height:180px;flex-direction:row}.lb{display:none}.social{flex:1;border-bottom:none;border-right:1px solid #334155}.sb-head{writing-mode:vertical-rl;padding:12px 8px;border-bottom:none;border-right:1px solid #334155}}
+    </style>
+</head>
+<body>
+    <div id="notif" class="notif"><div id="nCont"></div><div id="nActs" class="n-acts hidden"></div></div>
+
+    <div id="login" class="ov">
+        <div class="mod">
+            <h2>🎮 Morpion 20×20 Arena</h2>
+            <input type="text" id="pIn" placeholder="Votre Pseudo" maxlength="15" autocomplete="off">
+            <button class="btn btn-p" style="width:100%" id="loginBtn">ENTRER</button>
+            <p id="lErr" style="color:var(--danger);margin-top:12px;font-size:.9rem" class="hidden"></p>
+        </div>
+    </div>
+
+    <div class="app hidden" id="main">
+        <aside class="sidebar">
+            <div class="sb-head"><div style="font-weight:800;font-size:1.1rem">🏆 Top 100</div><div class="online"><span class="dot"></span><span id="oCnt">0</span> connecté(s)</div></div>
+            <div class="social">
+                <button id="sBtn" class="btn-sm btn-search">🔍 RECHERCHER PARTIE</button>
+                <div style="text-align:center;font-size:.75rem;opacity:.5;margin:4px 0">OU INVITER</div>
+                <div class="row"><input type="text" id="iIn" placeholder="Pseudo..." maxlength="15"><button id="invBtn" class="btn-sm btn-inv">📩</button></div>
+            </div>
+            <div class="lb" id="lb"></div>
+        </aside>
+        <main class="game">
+            <div class="nav-link"><a href="training.html">🤖 Aller au Training Bot</a></div>
+            <div class="status" id="st">En attente...</div>
+            <div class="vp" id="vp"><div class="board" id="bd"></div></div>
+            <div class="ctrls">
+                <button id="zInBtn" class="btn btn-s">➕</button>
+                <button id="zOutBtn" class="btn btn-s">➖</button>
+                <button class="btn btn-d" id="ffBtn" disabled>🏳️ Abandon</button>
+                <button class="btn btn-p hidden" id="rematchBtn">🔄 Rejouer</button>
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+        import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, orderBy, limit, runTransaction, getDoc, where, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA0ACJW1AJi4dzRkp8G5_eNQDbqNvAoR68",
+            authDomain: "ti-point-ti-croix.firebaseapp.com",
+            projectId: "ti-point-ti-croix",
+            storageBucket: "ti-point-ti-croix.firebasestorage.app",
+            messagingSenderId: "530932414833",
+            appId: "1:530932414833:web:529efe3e441b1a003e9ed0",
+            measurementId: "G-9G82QSCD0G"
+        };
+
+        const appFirebase = initializeApp(firebaseConfig);
+        const db = getFirestore(appFirebase);
+
+        const S = 20, W = 6;
+
+        // ═══════════════════════════════════════════════════════════════
+        // SYSTÈME AUDIO DU JEU
+        // ═══════════════════════════════════════════════════════════════
+        const AUDIO = {
+            click: null,
+            win: null,
+            lose: null,
+            notif: null,
+            enabled: true
+        };
+
+        // Initialisation sécurisée de l'audio
+        function initAudio() {
+            try {
+                AUDIO.click = new Audio("https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3");
+                AUDIO.win = new Audio("https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3");
+                AUDIO.lose = new Audio("https://assets.mixkit.co/active_storage/sfx/2502/2502-preview.mp3");
+                AUDIO.notif = new Audio("https://assets.mixkit.co/active_storage/sfx/911/911-preview.mp3");
+                
+                // Ajustement des volumes
+                AUDIO.click.volume = 0.4;
+                AUDIO.win.volume = 0.5;
+                AUDIO.lose.volume = 0.4;
+                AUDIO.notif.volume = 0.5;
+                
+                // Préchargement
+                Object.values(AUDIO).forEach(sound => {
+                    if (sound instanceof Audio) {
+                        sound.load();
+                    }
+                });
+                
+                console.log('🔊 Audio system initialized');
+            } catch (e) {
+                console.warn('⚠️ Audio initialization failed:', e);
+                AUDIO.enabled = false;
+            }
+        }
+
+        // Fonction de lecture sécurisée
+        function playSound(soundName) {
+            if (!AUDIO.enabled || !AUDIO[soundName]) return;
+            
+            try {
+                const sound = AUDIO[soundName];
+                sound.currentTime = 0; // Reset pour rejouer rapidement
+                sound.play().catch(err => {
+                    if (err.name !== 'NotAllowedError') {
+                        console.warn(`Could not play ${soundName}:`, err);
+                    }
+                });
+            } catch (e) {
+                console.warn(`Error playing ${soundName}:`, e);
+            }
+        }
+
+        // Initialisation au premier clic utilisateur (contourne le blocage autoplay)
+        let audioInitialized = false;
+        document.addEventListener('click', () => {
+            if (!audioInitialized) {
+                initAudio();
+                audioInitialized = true;
+            }
+        }, { once: true });
+        // ═══════════════════════════════════════════════════════════════ 
+
+        class App {
+            constructor() {
+                this.p = localStorage.getItem('m_p') || null;
+                this.gs = { id: null, sym: null, bd: Array(S*S).fill(''), act: false, turn: false, z: 1, opp: null };
+                this.unsubs = [];
+                this.gameUnsub = null;
+                this.rematchUnsub = null;
+                this.inviteTimeouts = {};
+                if (this.p) this.init();
+            }
+
+            login() {
+                const v = document.getElementById('pIn').value.trim();
+                if (v.length < 2) return this.err('lErr', 'Min 2 chars');
+                this.p = v;
+                localStorage.setItem('m_p', v);
+                this.init();
+            }
+
+            async init() {
+                document.getElementById('login').classList.add('hidden');
+                document.getElementById('main').classList.remove('hidden');
+
+                await setDoc(doc(db, 'presence', this.p), { t: Date.now() });
+                await setDoc(doc(db, 'players', this.p), { name: this.p, currentGame: null }, { merge: true });
+
+                const bd = document.getElementById('bd');
+                bd.innerHTML = '';
+                for (let i = 0; i < S * S; i++) {
+                    const c = document.createElement('div');
+                    c.className = 'cell';
+                    c.dataset.i = i;
+                    c.onclick = () => this.click(i);
+                    bd.appendChild(c);
+                }
+
+                this.unsubs.push(onSnapshot(collection(db, 'presence'), snap => {
+                    document.getElementById('oCnt').textContent = snap.size;
+                }));
+
+                this.unsubs.push(onSnapshot(query(collection(db, 'scores'), orderBy('wins', 'desc'), limit(100)), snap => {
+                    const lb = document.getElementById('lb');
+                    lb.innerHTML = snap.docs.map((d, i) => {
+                        const cls = d.id === this.p ? 'lb-i me' : 'lb-i';
+                        return `<div class="${cls}"><div class="lb-r">${i + 1}</div><div class="lb-n">${d.id}</div><div class="lb-s">${d.data().wins}</div></div>`;
+                    }).join('');
+                }));
+
+                this.unsubs.push(onSnapshot(doc(db, 'invitations', this.p), snap => {
+                    if (snap.exists()) {
+                        const d = snap.data();
+                        if (d.status === 'pending') {
+                            this.notif(`${d.from} vous invite !`, true,
+                                () => this.acceptInv(d.from, d.gameId),
+                                () => this.declineInv(d.from)
+                            );
+                        }
+                    }
+                }));
+
+                this.unsubs.push(onSnapshot(doc(db, 'players', this.p), async snap => {
+                    if (snap.exists()) {
+                        const gid = snap.data().currentGame;
+                        if (gid && gid !== this.gs.id) {
+                            this.loadGame(gid);
+                        } else if (!gid && this.gs.id) {
+                            await this.reset();
+                        }
+                    }
+                }));
+
+                setInterval(() => setDoc(doc(db, 'presence', this.p), { t: Date.now() }), 30000);
+            }
+
+            async findMatch() {
+                const btn = document.getElementById('sBtn');
+                btn.disabled = true;
+                btn.textContent = '🔍 RECHERCHE...';
+
+                try {
+                    const q = query(
+                        collection(db, 'games'),
+                        where('st', '==', 'waiting'),
+                        limit(1)
+                    );
+
+                    const snap = await getDocs(q);
+
+                    if (!snap.empty) {
+                        const gameDoc = snap.docs[0];
+                        const gameId = gameDoc.id;
+                        const gameData = gameDoc.data();
+
+                        if (gameData.pX === this.p) {
+                            this.notif('Vous êtes déjà dans cette partie !');
+                            btn.disabled = false;
+                            btn.textContent = '🔍 RECHERCHER PARTIE';
+                            return;
+                        }
+
+                        await runTransaction(db, async (tx) => {
+                            const gSnap = await tx.get(doc(db, 'games', gameId));
+                            if (!gSnap.exists() || gSnap.data().st !== 'waiting') {
+                                throw new Error('Game no longer available');
+                            }
+                            tx.update(doc(db, 'games', gameId), { pO: this.p, st: 'active' });
+                            tx.update(doc(db, 'players', this.p), { currentGame: gameId });
+                            tx.update(doc(db, 'players', gameData.pX), { currentGame: gameId });
+                        });
+
+                        this.loadGame(gameId);
+                    } else {
+                        const gid = `g_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        await setDoc(doc(db, 'games', gid), {
+                            pX: this.p,
+                            pO: null,
+                            bd: Array(S * S).fill(''),
+                            t: 'X',
+                            st: 'waiting',
+                            w: null,
+                            created: Date.now()
+                        });
+                        await updateDoc(doc(db, 'players', this.p), { currentGame: gid });
+                        this.notif('Partie créée, en attente d\'adversaire...');
+                        this.loadGame(gid);
+                    }
+                } catch (e) {
+                    console.error(e);
+                    this.notif('Erreur lors de la recherche');
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = '🔍 RECHERCHER PARTIE';
+                }
+            }
+
+            async invite() {
+                const v = document.getElementById('iIn').value.trim();
+                if (!v) return this.notif('Entrez un pseudo');
+                if (v === this.p) return this.notif('Vous ne pouvez pas vous inviter');
+
+                const targetPlayer = await getDoc(doc(db, 'players', v));
+                if (!targetPlayer.exists()) return this.notif('Joueur introuvable');
+
+                const targetPresence = await getDoc(doc(db, 'presence', v));
+                if (!targetPresence.exists()) return this.notif('Joueur hors ligne');
+
+                if (targetPlayer.data().currentGame) {
+                    return this.notif('Ce joueur est déjà en partie');
+                }
+
+                const gid = `g_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                
+                await setDoc(doc(db, 'games', gid), {
+                    pX: this.p,
+                    pO: v,
+                    bd: Array(S * S).fill(''),
+                    t: 'X',
+                    st: 'invitation_pending',
+                    w: null,
+                    created: Date.now()
+                });
+
+                await setDoc(doc(db, 'invitations', v), {
+                    from: this.p,
+                    gameId: gid,
+                    status: 'pending',
+                    timestamp: Date.now()
+                });
+
+                this.notif(`Invitation envoyée à ${v}`);
+                document.getElementById('iIn').value = '';
+
+                this.inviteTimeouts[gid] = setTimeout(async () => {
+                    const gameSnap = await getDoc(doc(db, 'games', gid));
+                    if (gameSnap.exists() && gameSnap.data().st === 'invitation_pending') {
+                        await deleteDoc(doc(db, 'games', gid));
+                        await deleteDoc(doc(db, 'invitations', v));
+                        this.notif('Invitation expirée');
+                    }
+                }, 30000);
+            }
+
+            async acceptInv(from, gameId) {
+                try {
+                    await runTransaction(db, async (tx) => {
+                        const gSnap = await tx.get(doc(db, 'games', gameId));
+                        if (!gSnap.exists() || gSnap.data().st !== 'invitation_pending') {
+                            throw new Error('Invitation no longer valid');
+                        }
+                        tx.update(doc(db, 'games', gameId), { st: 'active' });
+                        tx.update(doc(db, 'players', this.p), { currentGame: gameId });
+                        tx.update(doc(db, 'players', from), { currentGame: gameId });
+                        tx.delete(doc(db, 'invitations', this.p));
+                    });
+                    this.loadGame(gameId);
+                } catch (e) {
+                    console.error(e);
+                    this.notif('Erreur lors de l\'acceptation');
+                }
+            }
+
+            async declineInv(from) {
+                const invSnap = await getDoc(doc(db, 'invitations', this.p));
+                if (invSnap.exists()) {
+                    const gameId = invSnap.data().gameId;
+                    await deleteDoc(doc(db, 'games', gameId));
+                    await deleteDoc(doc(db, 'invitations', this.p));
+                    this.notif('Invitation refusée');
+                }
+            }
+
+            async loadGame(gid) {
+                if (this.gameUnsub) this.gameUnsub();
+
+                this.gs.id = gid;
+                this.gameUnsub = onSnapshot(doc(db, 'games', gid), async g => {
+                    if (!g.exists()) {
+                        await this.reset();
+                        return;
+                    }
+
+                    const d = g.data();
+                    this.gs.bd = d.bd || Array(S * S).fill('');
+                    this.gs.sym = d.pX === this.p ? 'X' : 'O';
+                    this.gs.opp = d.pX === this.p ? d.pO : d.pX;
+                    this.gs.turn = d.t === this.gs.sym;
+                    this.gs.act = d.st === 'active';
+
+                    this.render();
+
+                    const st = document.getElementById('st');
+                    const ffBtn = document.getElementById('ffBtn');
+
+                    if (d.st === 'waiting' || d.st === 'invitation_pending') {
+                        st.textContent = '⏳ En attente d\'adversaire...';
+                        ffBtn.disabled = true;
+                    } else if (d.st === 'active') {
+                        ffBtn.disabled = false;
+                        st.innerHTML = this.gs.turn ? '<span style="color:var(--warning)">⚡ À VOUS DE JOUER</span>' : `⏳ Tour de ${d.t === 'X' ? d.pX : d.pO}`;
+                    } else if (d.st === 'finished') {
+                        let msg = '';
+                        if (d.w === 'draw') {
+                            msg = '🤝 ÉGALITÉ';
+                        } else if (d.w === this.gs.sym) {
+                            msg = '🏆 VICTOIRE !';
+                            playSound('win'); // Son de victoire
+                        } else {
+                            msg = '😢 DÉFAITE';
+                            playSound('lose'); // Son de défaite
+                        }
+                        st.innerHTML = `<span style="color:${d.w === this.gs.sym ? 'var(--success)' : d.w === 'draw' ? 'var(--warning)' : 'var(--danger)'}">${msg}</span>`;
+                        
+                        // Afficher la ligne gagnante pour les deux joueurs
+                        if (d.winCells && Array.isArray(d.winCells)) {
+                            d.winCells.forEach(cellIndex => {
+                                document.querySelector(`.cell[data-i="${cellIndex}"]`)?.classList.add('win');
+                            });
+                        }
+                        
+                        ffBtn.disabled = true;
+                        ffBtn.classList.add('hidden');
+                        
+                        const rBtn = document.getElementById('rematchBtn');
+                        rBtn.classList.remove('hidden');
+                        rBtn.disabled = false;
+                        rBtn.textContent = '🔄 Rejouer';
+
+                        if (d.w && d.w !== 'draw' && d.w === this.gs.sym) {
+                            const scoreRef = doc(db, 'scores', this.p);
+                            await runTransaction(db, async (tx) => {
+                                const sSnap = await tx.get(scoreRef);
+                                const currentWins = sSnap.exists() ? (sSnap.data().wins || 0) : 0;
+                                tx.set(scoreRef, { wins: currentWins + 1 }, { merge: true });
+                            });
+                        }
+
+                        this.watchRematch();
+                    }
+                });
+            }
+
+            async click(i) {
+                if (!this.gs.act || !this.gs.turn || this.gs.bd[i]) return;
+                
+                playSound('click'); // Son du clic
+                
+                const nb = [...this.gs.bd];
+                nb[i] = this.gs.sym;
+                const r = Math.floor(i / S), c = i % S;
+                let win = false;
+                let winCells = [];
+                
+                for (const [dr, dc] of [[0,1],[1,0],[1,1],[1,-1]]) {
+                    let ln = [i];
+                    for (let d = -1; d <= 1; d += 2) {
+                        for (let j = 1; j < W; j++) {
+                            const nr = r + dr * j * d, nc = c + dc * j * d;
+                            if (nr < 0 || nr >= S || nc < 0 || nc >= S || nb[nr * S + nc] !== this.gs.sym) break;
+                            ln.push(nr * S + nc);
+                        }
+                    }
+                    if (ln.length >= W) {
+                        win = true;
+                        winCells = ln.sort((a, b) => a - b).slice(0, W);
+                        break;
+                    }
+                }
+                
+                const draw = !win && !nb.includes('');
+                const nextTurn = this.gs.sym === 'X' ? 'O' : 'X';
+                const u = { bd: nb, t: nextTurn };
+                if (win || draw) { 
+                    u.st = 'finished'; 
+                    u.w = draw ? 'draw' : this.gs.sym;
+                    if (win) u.winCells = winCells;
+                }
+                await updateDoc(doc(db, 'games', this.gs.id), u);
+            }
+
+            async ff() {
+                if (!this.gs.id) return;
+                await updateDoc(doc(db, 'games', this.gs.id), { st: 'finished', w: this.gs.sym === 'X' ? 'O' : 'X' });
+            }
+
+            async requestRematch() {
+                if (!this.gs.id || !this.gs.opp) return;
+
+                const rematchDocId = [this.p, this.gs.opp].sort().join('_');
+                const rematchRef = doc(db, 'rematches', rematchDocId);
+
+                try {
+                    await runTransaction(db, async (tx) => {
+                        const rematchSnap = await tx.get(rematchRef);
+                        
+                        if (rematchSnap.exists()) {
+                            const data = rematchSnap.data();
+                            
+                            if (data.requestedBy === this.p) {
+                                throw new Error('Vous avez déjà demandé un rematch');
+                            }
+
+                            const newGameId = `g_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                            const isX = Math.random() < 0.5;
+                            const pX = isX ? this.p : this.gs.opp;
+                            const pO = isX ? this.gs.opp : this.p;
+
+                            tx.set(doc(db, 'games', newGameId), {
+                                pX: pX,
+                                pO: pO,
+                                bd: Array(S * S).fill(''),
+                                t: 'X',
+                                st: 'active',
+                                w: null,
+                                created: Date.now()
+                            });
+
+                            tx.update(doc(db, 'players', this.p), { currentGame: newGameId });
+                            tx.update(doc(db, 'players', this.gs.opp), { currentGame: newGameId });
+                            tx.delete(rematchRef);
+                        } else {
+                            tx.set(rematchRef, {
+                                requestedBy: this.p,
+                                gameId: this.gs.id,
+                                timestamp: Date.now()
+                            });
+                        }
+                    });
+
+                    const checkRematch = await getDoc(rematchRef);
+                    if (checkRematch.exists()) {
+                        this.notif('Demande de rematch envoyée');
+                        document.getElementById('rematchBtn').disabled = true;
+                        document.getElementById('rematchBtn').textContent = '⏳ En attente...';
+                    }
+                } catch (e) {
+                    console.error(e);
+                    if (e.message.includes('déjà demandé')) {
+                        this.notif(e.message);
+                    } else {
+                        this.notif('Erreur lors de la demande');
+                    }
+                }
+            }
+
+            watchRematch() {
+                if (this.rematchUnsub) return;
+
+                const rematchDocId = [this.p, this.gs.opp].sort().join('_');
+                this.rematchUnsub = onSnapshot(doc(db, 'rematches', rematchDocId), snap => {
+                    if (snap.exists() && snap.data().requestedBy !== this.p) {
+                        this.notif(`${this.gs.opp} veut rejouer !`, true,
+                            () => this.acceptRematch(),
+                            () => this.declineRematch()
+                        );
+                    }
+                });
+            }
+
+            async acceptRematch() {
+                const rematchDocId = [this.p, this.gs.opp].sort().join('_');
+                const rematchRef = doc(db, 'rematches', rematchDocId);
+
+                try {
+                    await runTransaction(db, async (tx) => {
+                        const rematchSnap = await tx.get(rematchRef);
+                        if (!rematchSnap.exists()) {
+                            throw new Error('Demande de rematch expirée');
+                        }
+
+                        const newGameId = `g_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        const isX = Math.random() < 0.5;
+                        const pX = isX ? this.p : this.gs.opp;
+                        const pO = isX ? this.gs.opp : this.p;
+
+                        tx.set(doc(db, 'games', newGameId), {
+                            pX: pX,
+                            pO: pO,
+                            bd: Array(S * S).fill(''),
+                            t: 'X',
+                            st: 'active',
+                            w: null,
+                            created: Date.now()
+                        });
+
+                        tx.update(doc(db, 'players', this.p), { currentGame: newGameId });
+                        tx.update(doc(db, 'players', this.gs.opp), { currentGame: newGameId });
+                        tx.delete(rematchRef);
+                    });
+                } catch (e) {
+                    console.error(e);
+                    this.notif('Erreur lors de l\'acceptation');
+                }
+            }
+
+            async declineRematch() {
+                const rematchDocId = [this.p, this.gs.opp].sort().join('_');
+                await deleteDoc(doc(db, 'rematches', rematchDocId));
+                this.notif('Rematch refusé');
+            }
+
+            async reset() {
+                if (this.gameUnsub) { this.gameUnsub(); this.gameUnsub = null; }
+                if (this.rematchUnsub) { this.rematchUnsub(); this.rematchUnsub = null; }
+                
+                const oldGameId = this.gs.id;
+                this.gs = { id: null, sym: null, bd: Array(S*S).fill(''), act: false, turn: false, z: this.gs.z, opp: null };
+                
+                document.getElementById('ffBtn').disabled = true;
+                document.getElementById('ffBtn').classList.remove('hidden');
+                document.getElementById('rematchBtn').classList.add('hidden');
+                document.getElementById('st').textContent = 'En attente...';
+                this.render(); 
+
+                try {
+                    await updateDoc(doc(db, 'players', this.p), { currentGame: null });
+                    
+                    if (oldGameId) {
+                        const gameSnap = await getDoc(doc(db, 'games', oldGameId));
+                        if (gameSnap.exists() && gameSnap.data().st === 'finished') {
+                            await deleteDoc(doc(db, 'games', oldGameId));
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error in reset:', e);
+                }
+            }
+
+            render() {
+                document.querySelectorAll('.cell').forEach((c, i) => {
+                    const value = this.gs.bd[i] || '';
+                    c.className = 'cell';
+                    c.textContent = value;
+                    if (value) c.classList.add(value.toLowerCase(), 'taken');
+                    if (this.gs.id && !this.gs.turn) c.classList.add('off');
+                });
+            }
+
+            zoom(d) {
+                this.gs.z = Math.max(.5, Math.min(2.5, this.gs.z + d));
+                document.getElementById('bd').style.transform = `scale(${this.gs.z})`;
+            }
+
+            notif(m, a, y, n) {
+                const e = document.getElementById('notif');
+                document.getElementById('nCont').textContent = m;
+                const ac = document.getElementById('nActs');
+                if (a) {
+                    ac.classList.remove('hidden');
+                    ac.innerHTML = `<button class="btn-sm btn-search" id="ny">Oui</button><button class="btn-sm btn-d" id="nn">Non</button>`;
+                    document.getElementById('ny').onclick = () => { y(); e.classList.remove('show'); };
+                    document.getElementById('nn').onclick = () => { n(); e.classList.remove('show'); };
+                    e.classList.add('acc');
+                } else {
+                    ac.classList.add('hidden');
+                    e.classList.remove('acc');
+                }
+                e.classList.add('show');
+                if (!a) setTimeout(() => e.classList.remove('show'), 4000);
+            }
+
+            err(id, m) {
+                const e = document.getElementById(id); e.textContent = m; e.classList.remove('hidden');
+                setTimeout(() => e.classList.add('hidden'), 3000);
+            }
+
+            async cleanup() {
+                this.unsubs.forEach(u => u());
+                if (this.gameUnsub) this.gameUnsub();
+                if (this.rematchUnsub) this.rematchUnsub();
+                Object.values(this.inviteTimeouts).forEach(t => clearTimeout(t));
+
+                try {
+                    await deleteDoc(doc(db, 'presence', this.p));
+                    await updateDoc(doc(db, 'players', this.p), { currentGame: null });
+                } catch (e) {
+                    console.error('Cleanup error:', e);
+                }
+            }
+        }
+
+        const gameApp = new App();
+        window.app = gameApp; 
+
+        document.getElementById('loginBtn').onclick = () => gameApp.login();
+        document.getElementById('sBtn').onclick = () => gameApp.findMatch();
+        document.getElementById('invBtn').onclick = () => gameApp.invite();
+        document.getElementById('ffBtn').onclick = () => gameApp.ff();
+        document.getElementById('rematchBtn').onclick = () => gameApp.requestRematch();
+        document.getElementById('zInBtn').onclick = () => gameApp.zoom(0.15);
+        document.getElementById('zOutBtn').onclick = () => gameApp.zoom(-0.15);
+        
+        document.getElementById('pIn').addEventListener('keypress', e => {
+            if (e.key === 'Enter') gameApp.login();
+        });
+
+        window.addEventListener('beforeunload', async () => {
+            if (gameApp && gameApp.p) {
+                await gameApp.cleanup();
+            }
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && gameApp && gameApp.p) {
+                setDoc(doc(db, 'presence', gameApp.p), { t: Date.now(), away: true });
+            } else if (!document.hidden && gameApp && gameApp.p) {
+                setDoc(doc(db, 'presence', gameApp.p), { t: Date.now(), away: false });
+            }
+        });
+    </script>
+</body>
+</html>
