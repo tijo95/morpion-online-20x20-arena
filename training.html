@@ -78,6 +78,72 @@
     </div>
 
     <script>
+        // ═══════════════════════════════════════════════════════════════
+        // SYSTÈME AUDIO DU JEU
+        // ═══════════════════════════════════════════════════════════════
+        const AUDIO = {
+            click: null,
+            win: null,
+            lose: null,
+            draw: null,
+            enabled: true
+        };
+
+        // Initialisation sécurisée de l'audio
+        function initAudio() {
+            try {
+                AUDIO.click = new Audio("https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3");
+                AUDIO.win = new Audio("https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3");
+                AUDIO.lose = new Audio("https://assets.mixkit.co/active_storage/sfx/2502/2502-preview.mp3");
+                AUDIO.draw = new Audio("https://assets.mixkit.co/active_storage/sfx/911/911-preview.mp3");
+                
+                // Ajustement des volumes
+                AUDIO.click.volume = 0.4;
+                AUDIO.win.volume = 0.5;
+                AUDIO.lose.volume = 0.4;
+                AUDIO.draw.volume = 0.3;
+                
+                // Préchargement
+                Object.values(AUDIO).forEach(sound => {
+                    if (sound instanceof Audio) {
+                        sound.load();
+                    }
+                });
+                
+                console.log('🔊 Audio system initialized');
+            } catch (e) {
+                console.warn('⚠️ Audio initialization failed:', e);
+                AUDIO.enabled = false;
+            }
+        }
+
+        // Fonction de lecture sécurisée
+        function playSound(soundName) {
+            if (!AUDIO.enabled || !AUDIO[soundName]) return;
+            
+            try {
+                const sound = AUDIO[soundName];
+                sound.currentTime = 0;
+                sound.play().catch(err => {
+                    if (err.name !== 'NotAllowedError') {
+                        console.warn(`Could not play ${soundName}:`, err);
+                    }
+                });
+            } catch (e) {
+                console.warn(`Error playing ${soundName}:`, e);
+            }
+        }
+
+        // Initialisation au premier clic utilisateur
+        let audioInitialized = false;
+        document.addEventListener('click', () => {
+            if (!audioInitialized) {
+                initAudio();
+                audioInitialized = true;
+            }
+        }, { once: true });
+        // ═══════════════════════════════════════════════════════════════
+
         const S=20,W=6,DIRS=[[0,1],[1,0],[1,1],[1,-1]];
         const SC={FIVE:1000000,OPEN_FOUR:500000,FOUR:100000,OPEN_THREE:25000,THREE:4000,OPEN_TWO:800,TWO:150,ONE:10};
 
@@ -94,7 +160,11 @@
             updScoreUI(){document.getElementById('sX').textContent=this.sc.X;document.getElementById('sO').textContent=this.sc.O;document.getElementById('sD').textContent=this.sc.D}
             zoom(d){this.z=Math.max(.5,Math.min(2.5,this.z+d));document.getElementById('bd').style.transform=`scale(${this.z})`}
             
-            click(i){if(!this.act||this.aiTurn||this.bd[i])return;this.move(i,'X')}
+            click(i){
+                if(!this.act||this.aiTurn||this.bd[i])return;
+                playSound('click'); // Son du clic joueur
+                this.move(i,'X');
+            }
             
             move(i,p){
                 this.bd[i]=p;const c=document.querySelector(`.cell[data-i="${i}"]`);c.textContent=p;c.classList.add(p.toLowerCase(),'taken');
@@ -102,8 +172,32 @@
                 c.classList.add('last');this.last=i;
                 
                 const wl=this.checkWin(i,p);
-                if(wl){wl.forEach(x=>document.querySelector(`.cell[data-i="${x}"]`)?.classList.add('win'));this.act=false;this.sc[p]++;this.save();this.updScoreUI();document.getElementById('st').innerHTML=p==='X'?'<span style="color:var(--success)">🎉 Victoire !</span>':'<span style="color:var(--danger)">💀 Le Bot gagne...</span>';return}
-                if(!this.bd.includes(null)){this.act=false;this.sc.D++;this.save();this.updScoreUI();document.getElementById('st').textContent='🤝 Match Nul';return}
+                if(wl){
+                    wl.forEach(x=>document.querySelector(`.cell[data-i="${x}"]`)?.classList.add('win'));
+                    this.act=false;
+                    this.sc[p]++;
+                    this.save();
+                    this.updScoreUI();
+                    
+                    // Sons de victoire/défaite
+                    if(p==='X') {
+                        playSound('win');
+                        document.getElementById('st').innerHTML='<span style="color:var(--success)">🎉 Victoire !</span>';
+                    } else {
+                        playSound('lose');
+                        document.getElementById('st').innerHTML='<span style="color:var(--danger)">💀 Le Bot gagne...</span>';
+                    }
+                    return;
+                }
+                if(!this.bd.includes(null)){
+                    this.act=false;
+                    this.sc.D++;
+                    this.save();
+                    this.updScoreUI();
+                    playSound('draw'); // Son d'égalité
+                    document.getElementById('st').textContent='🤝 Match Nul';
+                    return;
+                }
                 
                 if(p==='X'){this.aiTurn=true;document.getElementById('st').textContent='🤖 Le Bot réfléchit...';setTimeout(()=>this.playAI(),250)}
                 else{this.aiTurn=false;document.getElementById('st').textContent='À vous de jouer (X)'}
@@ -119,6 +213,7 @@
                 if(this.diff==='easy')best=scored[Math.floor(Math.random()*Math.min(5,scored.length))].i;
                 else if(this.diff==='medium')best=(Math.random()<.8?scored[0]:scored[1]||scored[0]).i;
                 else best=scored[0].i;
+                playSound('click'); // Son du bot
                 this.move(best,'O');
             }
 

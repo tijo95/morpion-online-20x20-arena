@@ -35,7 +35,34 @@
         .nav-link a{color:var(--warning);text-decoration:none;font-weight:700;font-size:.9rem;padding:8px 16px;border:1px solid var(--warning);border-radius:8px;transition:.2s;display:inline-block}
         .nav-link a:hover{background:var(--warning);color:#000}
         .status{background:#0f172a;padding:10px;border-radius:8px;text-align:center;font-weight:600;margin-bottom:8px;min-height:44px;display:flex;align-items:center;justify-content:center;border:1px solid #334155}
+        .game-container{display:flex;gap:12px;flex:1;min-height:0}
         .vp{flex:1;background:#0f172a;border-radius:12px;border:2px solid #334155;overflow:auto;position:relative;touch-action:pan-x pan-y;scrollbar-width:thin;scrollbar-color:#334155 #0f172a}
+        
+        /* CHAT PANEL */
+        .chat-panel{width:320px;background:#0f172a;border-radius:12px;border:2px solid #334155;display:flex;flex-direction:column;flex-shrink:0}
+        .chat-header{padding:12px;background:#1e293b;font-weight:700;text-align:center;font-size:.9rem;border-bottom:2px solid #334155;border-radius:10px 10px 0 0}
+        .chat-messages{flex:1;overflow-y:auto;padding:12px;scrollbar-width:thin;scrollbar-color:#334155 transparent;display:flex;flex-direction:column;gap:8px}
+        .chat-msg{padding:10px;background:#1e293b;border-radius:8px;font-size:.85rem;word-wrap:break-word;animation:slideIn .2s ease-out}
+        .chat-msg.me{background:rgba(99,102,241,.2);border-left:4px solid var(--primary)}
+        .chat-msg.opp{background:rgba(236,72,153,.2);border-left:4px solid var(--secondary)}
+        .chat-msg-author{font-weight:700;font-size:.8rem;margin-bottom:4px}
+        .chat-msg-author.me{color:var(--primary)}
+        .chat-msg-author.opp{color:var(--secondary)}
+        .chat-msg-author.global{color:var(--warning)}
+        .chat-msg-text{line-height:1.4;word-break:break-word}
+        .chat-msg-time{font-size:.7rem;opacity:.6;margin-top:4px;text-align:right}
+        .chat-input{display:flex;gap:6px;padding:10px;background:#1e293b;border-top:2px solid #334155;position:relative;border-radius:0 0 10px 10px}
+        .chat-input input{flex:1;background:#0f172a;border:1px solid #334155;color:#fff;padding:10px;border-radius:6px;font-size:.85rem}
+        .btn-emoji{background:#334155;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-size:1.2rem;transition:.2s}
+        .btn-emoji:hover{background:#475569}
+        .btn-send{background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:1.1rem;transition:.2s;font-weight:700}
+        .btn-send:hover{filter:brightness(1.2)}
+        .emoji-picker{position:absolute;bottom:60px;right:10px;background:#1e293b;border:2px solid #334155;border-radius:12px;padding:12px;display:grid;grid-template-columns:repeat(6,1fr);gap:6px;box-shadow:0 8px 24px rgba(0,0,0,.6);z-index:10;max-width:280px}
+        .emoji-picker.hidden{display:none}
+        .emoji-item{background:#0f172a;border:none;padding:8px;border-radius:6px;cursor:pointer;font-size:1.4rem;transition:.2s}
+        .emoji-item:hover{background:#334155;transform:scale(1.2)}
+        @keyframes slideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        
         .board{display:grid;grid-template-columns:repeat(20,var(--cell-size));gap:2px;padding:8px;width:max-content;margin:auto;transform-origin:center center}
         .cell{width:var(--cell-size);height:var(--cell-size);background:#1e293b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:calc(var(--cell-size)*.6);cursor:pointer;user-select:none;transition:.15s;position:relative}
         .cell:hover:not(.taken):not(.off){background:#334155}
@@ -58,7 +85,14 @@
         .notif.show{transform:translateX(0)}.notif.acc{border-color:var(--success)}
         .n-acts{display:flex;gap:8px;margin-top:10px}
         @keyframes pulse{0%,100%{opacity:.8}50%{opacity:.3}}
-        @media(max-width:900px){.app{flex-direction:column}.sidebar{width:100%;height:180px;flex-direction:row}.lb{display:none}.social{flex:1;border-bottom:none;border-right:1px solid #334155}.sb-head{writing-mode:vertical-rl;padding:12px 8px;border-bottom:none;border-right:1px solid #334155}}
+        @media(max-width:900px){
+            .app{flex-direction:column}
+            .sidebar{width:100%;height:180px;flex-direction:row}
+            .lb{display:none}
+            .social{flex:1;border-bottom:none;border-right:1px solid #334155}
+            .sb-head{writing-mode:vertical-rl;padding:12px 8px;border-bottom:none;border-right:1px solid #334155}
+            .chat-panel{display:none}
+        }
     </style>
 </head>
 <body>
@@ -86,12 +120,25 @@
         <main class="game">
             <div class="nav-link"><a href="training.html">🤖 Aller au Training Bot</a></div>
             <div class="status" id="st">En attente...</div>
-            <div class="vp" id="vp"><div class="board" id="bd"></div></div>
+            <div class="game-container">
+                <div class="vp" id="vp"><div class="board" id="bd"></div></div>
+                <div class="chat-panel">
+                    <div class="chat-header" id="chatHeader">💬 Tchat Global</div>
+                    <div class="chat-messages" id="chatMsgs"></div>
+                    <div class="chat-input">
+                        <input type="text" id="chatIn" placeholder="Message..." maxlength="200">
+                        <button id="emojiBtn" class="btn-emoji">😊</button>
+                        <button id="chatSend" class="btn-send">📤</button>
+                    </div>
+                    <div class="emoji-picker hidden" id="emojiPicker"></div>
+                </div>
+            </div>
             <div class="ctrls">
                 <button id="zInBtn" class="btn btn-s">➕</button>
                 <button id="zOutBtn" class="btn btn-s">➖</button>
                 <button class="btn btn-d" id="ffBtn" disabled>🏳️ Abandon</button>
                 <button class="btn btn-p hidden" id="rematchBtn">🔄 Rejouer</button>
+                <button class="btn btn-s hidden" id="newGameBtn">🏠 Nouvelle partie</button>
             </div>
         </main>
     </div>
@@ -179,6 +226,19 @@
                 audioInitialized = true;
             }
         }, { once: true });
+        // ═══════════════════════════════════════════════════════════════
+
+        // ═══════════════════════════════════════════════════════════════
+        // EMOJIS POPULAIRES POUR LE SÉLECTEUR
+        // ═══════════════════════════════════════════════════════════════
+        const EMOJIS = [
+            '😊', '😂', '🤣', '😍', '🥰', '😎',
+            '🤔', '😅', '😭', '😡', '🤯', '🥳',
+            '👍', '👎', '👏', '🙏', '💪', '🤝',
+            '❤️', '🔥', '⭐', '✨', '💯', '🎮',
+            '🏆', '🎯', '⚡', '💥', '🎉', '🚀',
+            '😈', '👻', '💀', '🤖', '👾', '🎲'
+        ];
         // ═══════════════════════════════════════════════════════════════ 
 
         class App {
@@ -189,6 +249,8 @@
                 this.gameUnsub = null;
                 this.rematchUnsub = null;
                 this.inviteTimeouts = {};
+                this.chatUnsub = null;
+                this.currentChatMode = 'global'; // 'global' ou 'private'
                 if (this.p) this.init();
             }
 
@@ -218,7 +280,20 @@
                 }
 
                 this.unsubs.push(onSnapshot(collection(db, 'presence'), snap => {
-                    document.getElementById('oCnt').textContent = snap.size;
+                    const now = Date.now();
+                    const activeCount = snap.docs.filter(doc => {
+                        const lastSeen = doc.data().t || 0;
+                        return (now - lastSeen) < 45000; // Actif si ping dans les 45 dernières secondes
+                    }).length;
+                    document.getElementById('oCnt').textContent = activeCount;
+                    
+                    // Nettoyage des présences expirées (>2 minutes)
+                    snap.docs.forEach(async doc => {
+                        const lastSeen = doc.data().t || 0;
+                        if (now - lastSeen > 120000) {
+                            await deleteDoc(doc.ref).catch(() => {});
+                        }
+                    });
                 }));
 
                 this.unsubs.push(onSnapshot(query(collection(db, 'scores'), orderBy('wins', 'desc'), limit(100)), snap => {
@@ -252,7 +327,140 @@
                     }
                 }));
 
-                setInterval(() => setDoc(doc(db, 'presence', this.p), { t: Date.now() }), 30000);
+                setInterval(() => setDoc(doc(db, 'presence', this.p), { t: Date.now() }), 15000);
+                
+                // Initialiser le tchat global
+                this.initChat('global');
+                
+                // Initialiser le sélecteur d'emojis
+                this.initEmojiPicker();
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // SYSTÈME DE TCHAT
+            // ═══════════════════════════════════════════════════════════════
+            
+            initEmojiPicker() {
+                const picker = document.getElementById('emojiPicker');
+                picker.innerHTML = EMOJIS.map(emoji => 
+                    `<button class="emoji-item" data-emoji="${emoji}">${emoji}</button>`
+                ).join('');
+                
+                picker.querySelectorAll('.emoji-item').forEach(btn => {
+                    btn.onclick = () => {
+                        const input = document.getElementById('chatIn');
+                        input.value += btn.dataset.emoji;
+                        input.focus();
+                        picker.classList.add('hidden');
+                    };
+                });
+            }
+            
+            toggleEmojiPicker() {
+                const picker = document.getElementById('emojiPicker');
+                picker.classList.toggle('hidden');
+            }
+            
+            initChat(mode) {
+                if (this.chatUnsub) {
+                    this.chatUnsub();
+                    this.chatUnsub = null;
+                }
+                
+                this.currentChatMode = mode;
+                const chatHeader = document.getElementById('chatHeader');
+                const chatMsgs = document.getElementById('chatMsgs');
+                chatMsgs.innerHTML = '';
+                
+                if (mode === 'global') {
+                    chatHeader.textContent = '💬 Tchat Global';
+                    
+                    // Écouter le tchat global (20 derniers messages)
+                    this.chatUnsub = onSnapshot(
+                        query(collection(db, 'chat_global'), orderBy('timestamp', 'desc'), limit(20)),
+                        snapshot => {
+                            const messages = snapshot.docs.reverse().map(d => ({
+                                id: d.id,
+                                ...d.data()
+                            }));
+                            this.renderChatMessages(messages, 'global');
+                        }
+                    );
+                } else if (mode === 'private' && this.gs.id) {
+                    chatHeader.textContent = `💬 Tchat avec ${this.gs.opp}`;
+                    
+                    // Écouter le tchat privé de la partie
+                    this.chatUnsub = onSnapshot(
+                        query(collection(db, `games/${this.gs.id}/chat`), orderBy('timestamp', 'asc')),
+                        snapshot => {
+                            const messages = snapshot.docs.map(d => ({
+                                id: d.id,
+                                ...d.data()
+                            }));
+                            this.renderChatMessages(messages, 'private');
+                        }
+                    );
+                }
+            }
+            
+            renderChatMessages(messages, mode) {
+                const chatMsgs = document.getElementById('chatMsgs');
+                const shouldScroll = chatMsgs.scrollHeight - chatMsgs.scrollTop <= chatMsgs.clientHeight + 50;
+                
+                chatMsgs.innerHTML = messages.map(msg => {
+                    const isMe = msg.author === this.p;
+                    const msgClass = mode === 'global' ? 'chat-msg' : (isMe ? 'chat-msg me' : 'chat-msg opp');
+                    const authorClass = mode === 'global' ? 'global' : (isMe ? 'me' : 'opp');
+                    const time = new Date(msg.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                    
+                    return `
+                        <div class="${msgClass}">
+                            <div class="chat-msg-author ${authorClass}">${msg.author}</div>
+                            <div class="chat-msg-text">${this.escapeHtml(msg.text)}</div>
+                            <div class="chat-msg-time">${time}</div>
+                        </div>
+                    `;
+                }).join('');
+                
+                if (shouldScroll) {
+                    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+                }
+            }
+            
+            async sendChatMessage() {
+                const input = document.getElementById('chatIn');
+                const text = input.value.trim();
+                
+                if (!text || text.length > 200) return;
+                
+                // Fermer le sélecteur d'emojis
+                document.getElementById('emojiPicker').classList.add('hidden');
+                
+                const msg = {
+                    author: this.p,
+                    text: text,
+                    timestamp: Date.now()
+                };
+                
+                try {
+                    if (this.currentChatMode === 'global') {
+                        await setDoc(doc(collection(db, 'chat_global')), msg);
+                    } else if (this.currentChatMode === 'private' && this.gs.id) {
+                        await setDoc(doc(collection(db, `games/${this.gs.id}/chat`)), msg);
+                    }
+                    
+                    input.value = '';
+                    playSound('notif');
+                } catch (e) {
+                    console.error('Error sending message:', e);
+                    this.notif('Erreur lors de l\'envoi du message');
+                }
+            }
+            
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
             }
 
             async findMatch() {
@@ -420,6 +628,11 @@
                     } else if (d.st === 'active') {
                         ffBtn.disabled = false;
                         st.innerHTML = this.gs.turn ? '<span style="color:var(--warning)">⚡ À VOUS DE JOUER</span>' : `⏳ Tour de ${d.t === 'X' ? d.pX : d.pO}`;
+                        
+                        // Passer en mode tchat privé
+                        if (this.currentChatMode !== 'private') {
+                            this.initChat('private');
+                        }
                     } else if (d.st === 'finished') {
                         let msg = '';
                         if (d.w === 'draw') {
@@ -447,6 +660,10 @@
                         rBtn.classList.remove('hidden');
                         rBtn.disabled = false;
                         rBtn.textContent = '🔄 Rejouer';
+
+                        const ngBtn = document.getElementById('newGameBtn');
+                        ngBtn.classList.remove('hidden');
+                        ngBtn.disabled = false;
 
                         if (d.w && d.w !== 'draw' && d.w === this.gs.sym) {
                             const scoreRef = doc(db, 'scores', this.p);
@@ -502,6 +719,7 @@
 
             async ff() {
                 if (!this.gs.id) return;
+                playSound('lose'); // Son d'abandon
                 await updateDoc(doc(db, 'games', this.gs.id), { st: 'finished', w: this.gs.sym === 'X' ? 'O' : 'X' });
             }
 
@@ -621,6 +839,16 @@
                 this.notif('Rematch refusé');
             }
 
+            async newGame() {
+                if (!this.gs.id) return;
+                
+                const confirmMsg = `Voulez-vous quitter cette partie et en chercher une nouvelle ?`;
+                if (!confirm(confirmMsg)) return;
+                
+                await this.reset();
+                this.notif('Vous pouvez maintenant chercher une nouvelle partie');
+            }
+
             async reset() {
                 if (this.gameUnsub) { this.gameUnsub(); this.gameUnsub = null; }
                 if (this.rematchUnsub) { this.rematchUnsub(); this.rematchUnsub = null; }
@@ -631,8 +859,12 @@
                 document.getElementById('ffBtn').disabled = true;
                 document.getElementById('ffBtn').classList.remove('hidden');
                 document.getElementById('rematchBtn').classList.add('hidden');
+                document.getElementById('newGameBtn').classList.add('hidden');
                 document.getElementById('st').textContent = 'En attente...';
                 this.render(); 
+
+                // Revenir au tchat global
+                this.initChat('global');
 
                 try {
                     await updateDoc(doc(db, 'players', this.p), { currentGame: null });
@@ -664,6 +896,7 @@
             }
 
             notif(m, a, y, n) {
+                playSound('notif'); // Son de notification
                 const e = document.getElementById('notif');
                 document.getElementById('nCont').textContent = m;
                 const ac = document.getElementById('nActs');
@@ -690,6 +923,7 @@
                 this.unsubs.forEach(u => u());
                 if (this.gameUnsub) this.gameUnsub();
                 if (this.rematchUnsub) this.rematchUnsub();
+                if (this.chatUnsub) this.chatUnsub();
                 Object.values(this.inviteTimeouts).forEach(t => clearTimeout(t));
 
                 try {
@@ -709,11 +943,27 @@
         document.getElementById('invBtn').onclick = () => gameApp.invite();
         document.getElementById('ffBtn').onclick = () => gameApp.ff();
         document.getElementById('rematchBtn').onclick = () => gameApp.requestRematch();
+        document.getElementById('newGameBtn').onclick = () => gameApp.newGame();
         document.getElementById('zInBtn').onclick = () => gameApp.zoom(0.15);
         document.getElementById('zOutBtn').onclick = () => gameApp.zoom(-0.15);
         
         document.getElementById('pIn').addEventListener('keypress', e => {
             if (e.key === 'Enter') gameApp.login();
+        });
+
+        document.getElementById('chatSend').onclick = () => gameApp.sendChatMessage();
+        document.getElementById('emojiBtn').onclick = () => gameApp.toggleEmojiPicker();
+        document.getElementById('chatIn').addEventListener('keypress', e => {
+            if (e.key === 'Enter') gameApp.sendChatMessage();
+        });
+
+        // Fermer le sélecteur d'emojis quand on clique ailleurs
+        document.addEventListener('click', (e) => {
+            const picker = document.getElementById('emojiPicker');
+            const emojiBtn = document.getElementById('emojiBtn');
+            if (!picker.contains(e.target) && e.target !== emojiBtn && !picker.classList.contains('hidden')) {
+                picker.classList.add('hidden');
+            }
         });
 
         window.addEventListener('beforeunload', async () => {
