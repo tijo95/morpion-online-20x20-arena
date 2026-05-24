@@ -109,7 +109,7 @@
 
     <div class="app hidden" id="main">
         <aside class="sidebar">
-            <div class="sb-head"><div style="font-weight:800;font-size:1.1rem">🏆 Top 100</div><div class="online"><span class="dot"></span><span id="oCnt">0</span> connecté(s)</div></div>
+            <div class="sb-head"><div style="font-weight:800;font-size:1.1rem">🏆 Top 100 ELO</div><div class="online"><span class="dot"></span><span id="oCnt">0</span> connecté(s)</div></div>
             <div class="social">
                 <button id="sBtn" class="btn-sm btn-search">🔍 RECHERCHER PARTIE</button>
                 <div style="text-align:center;font-size:.75rem;opacity:.5;margin:4px 0">OU INVITER</div>
@@ -161,6 +161,46 @@
         const db = getFirestore(appFirebase);
 
         const S = 20, W = 6;
+
+        // ═══════════════════════════════════════════════════════════════
+        // SYSTÈME DE RANGS ELO
+        // ═══════════════════════════════════════════════════════════════
+        const RANKS = {
+            BRONZE: { name: 'Bronze', icon: '🥉', min: 0, max: 999, color: '#cd7f32' },
+            SILVER: { name: 'Argent', icon: '🥈', min: 1000, max: 1399, color: '#c0c0c0' },
+            GOLD: { name: 'Or', icon: '🥇', min: 1400, max: 1799, color: '#ffd700' },
+            PLATINUM: { name: 'Platine', icon: '💎', min: 1800, max: 2199, color: '#e5e4e2' },
+            DIAMOND: { name: 'Diamant', icon: '💠', min: 2200, max: 2599, color: '#b9f2ff' },
+            MASTER: { name: 'Maître', icon: '👑', min: 2600, max: 9999, color: '#ff6b6b' }
+        };
+
+        const STARTING_ELO = 1200;
+        const K_FACTOR = 32; // Facteur K pour le calcul ELO
+
+        function getRankFromElo(elo) {
+            for (const [key, rank] of Object.entries(RANKS)) {
+                if (elo >= rank.min && elo <= rank.max) {
+                    return rank;
+                }
+            }
+            return RANKS.BRONZE;
+        }
+
+        function calculateElo(winnerElo, loserElo) {
+            const expectedWinner = 1 / (1 + Math.pow(10, (loserElo - winnerElo) / 400));
+            const expectedLoser = 1 / (1 + Math.pow(10, (winnerElo - loserElo) / 400));
+            
+            const newWinnerElo = Math.round(winnerElo + K_FACTOR * (1 - expectedWinner));
+            const newLoserElo = Math.round(loserElo + K_FACTOR * (0 - expectedLoser));
+            
+            return {
+                winner: newWinnerElo,
+                loser: newLoserElo,
+                winnerChange: newWinnerElo - winnerElo,
+                loserChange: newLoserElo - loserElo
+            };
+        }
+        // ═══════════════════════════════════════════════════════════════
 
         // ═══════════════════════════════════════════════════════════════
         // SYSTÈME AUDIO DU JEU
@@ -267,7 +307,12 @@
                 document.getElementById('main').classList.remove('hidden');
 
                 await setDoc(doc(db, 'presence', this.p), { t: Date.now() });
-                await setDoc(doc(db, 'players', this.p), { name: this.p, currentGame: null }, { merge: true });
+                await setDoc(doc(db, 'players', this.p), { 
+                    name: this.p, 
+                    currentGame: null,
+                    elo: STARTING_ELO,
+                    rank: 'BRONZE'
+                }, { merge: true });
 
                 const bd = document.getElementById('bd');
                 bd.innerHTML = '';
@@ -296,11 +341,18 @@
                     });
                 }));
 
-                this.unsubs.push(onSnapshot(query(collection(db, 'scores'), orderBy('wins', 'desc'), limit(100)), snap => {
+                this.unsubs.push(onSnapshot(query(collection(db, 'players'), orderBy('elo', 'desc'), limit(100)), snap => {
                     const lb = document.getElementById('lb');
                     lb.innerHTML = snap.docs.map((d, i) => {
+                        const data = d.data();
+                        const elo = data.elo || STARTING_ELO;
+                        const rank = getRankFromElo(elo);
                         const cls = d.id === this.p ? 'lb-i me' : 'lb-i';
-                        return `<div class="${cls}"><div class="lb-r">${i + 1}</div><div class="lb-n">${d.id}</div><div class="lb-s">${d.data().wins}</div></div>`;
+                        return `<div class="${cls}">
+                            <div class="lb-r">${i + 1}</div>
+                            <div class="lb-n">${rank.icon} ${d.id}</div>
+                            <div class="lb-s" style="color:${rank.color}">${elo}</div>
+                        </div>`;
                     }).join('');
                 }));
 
@@ -413,9 +465,12 @@
                     const authorClass = mode === 'global' ? 'global' : (isMe ? 'me' : 'opp');
                     const time = new Date(msg.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                     
+                    // Récupérer le rang du joueur (optionnel, si disponible dans le message)
+                    const rankIcon = msg.rankIcon || '';
+                    
                     return `
                         <div class="${msgClass}">
-                            <div class="chat-msg-author ${authorClass}">${msg.author}</div>
+                            <div class="chat-msg-author ${authorClass}">${rankIcon} ${msg.author}</div>
                             <div class="chat-msg-text">${this.escapeHtml(msg.text)}</div>
                             <div class="chat-msg-time">${time}</div>
                         </div>
@@ -436,10 +491,16 @@
                 // Fermer le sélecteur d'emojis
                 document.getElementById('emojiPicker').classList.add('hidden');
                 
+                // Récupérer le rang actuel du joueur
+                const playerDoc = await getDoc(doc(db, 'players', this.p));
+                const playerElo = playerDoc.data().elo || STARTING_ELO;
+                const playerRank = getRankFromElo(playerElo);
+                
                 const msg = {
                     author: this.p,
                     text: text,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    rankIcon: playerRank.icon
                 };
                 
                 try {
@@ -665,13 +726,9 @@
                         ngBtn.classList.remove('hidden');
                         ngBtn.disabled = false;
 
-                        if (d.w && d.w !== 'draw' && d.w === this.gs.sym) {
-                            const scoreRef = doc(db, 'scores', this.p);
-                            await runTransaction(db, async (tx) => {
-                                const sSnap = await tx.get(scoreRef);
-                                const currentWins = sSnap.exists() ? (sSnap.data().wins || 0) : 0;
-                                tx.set(scoreRef, { wins: currentWins + 1 }, { merge: true });
-                            });
+                        // Mise à jour ELO (seulement pour victoire/défaite, pas égalité)
+                        if (d.w && d.w !== 'draw' && !d.eloUpdated) {
+                            await this.updateElo(d.w);
                         }
 
                         this.watchRematch();
@@ -721,6 +778,60 @@
                 if (!this.gs.id) return;
                 playSound('lose'); // Son d'abandon
                 await updateDoc(doc(db, 'games', this.gs.id), { st: 'finished', w: this.gs.sym === 'X' ? 'O' : 'X' });
+            }
+
+            async updateElo(winner) {
+                try {
+                    const gameRef = doc(db, 'games', this.gs.id);
+                    const gameSnap = await getDoc(gameRef);
+                    const gameData = gameSnap.data();
+                    
+                    // Déterminer le gagnant et le perdant
+                    const winnerPseudo = winner === 'X' ? gameData.pX : gameData.pO;
+                    const loserPseudo = winner === 'X' ? gameData.pO : gameData.pX;
+                    
+                    // Récupérer les ELO actuels
+                    const winnerDoc = await getDoc(doc(db, 'players', winnerPseudo));
+                    const loserDoc = await getDoc(doc(db, 'players', loserPseudo));
+                    
+                    const winnerElo = winnerDoc.data().elo || STARTING_ELO;
+                    const loserElo = loserDoc.data().elo || STARTING_ELO;
+                    
+                    // Calculer nouveaux ELO
+                    const eloChanges = calculateElo(winnerElo, loserElo);
+                    
+                    // Mettre à jour les deux joueurs
+                    await runTransaction(db, async (tx) => {
+                        const winnerRank = getRankFromElo(eloChanges.winner);
+                        const loserRank = getRankFromElo(eloChanges.loser);
+                        
+                        tx.update(doc(db, 'players', winnerPseudo), {
+                            elo: eloChanges.winner,
+                            rank: winnerRank.name
+                        });
+                        
+                        tx.update(doc(db, 'players', loserPseudo), {
+                            elo: eloChanges.loser,
+                            rank: loserRank.name
+                        });
+                        
+                        // Marquer que l'ELO a été mis à jour
+                        tx.update(gameRef, { eloUpdated: true });
+                    });
+                    
+                    // Afficher le changement d'ELO pour le joueur actuel
+                    const change = winner === this.gs.sym ? eloChanges.winnerChange : eloChanges.loserChange;
+                    const newElo = winner === this.gs.sym ? eloChanges.winner : eloChanges.loser;
+                    const newRank = getRankFromElo(newElo);
+                    
+                    const changeText = change >= 0 ? `+${change}` : `${change}`;
+                    const changeColor = change >= 0 ? 'var(--success)' : 'var(--danger)';
+                    
+                    this.notif(`${newRank.icon} ELO : ${newElo} (${changeText})`);
+                    
+                } catch (e) {
+                    console.error('Error updating ELO:', e);
+                }
             }
 
             async requestRematch() {
