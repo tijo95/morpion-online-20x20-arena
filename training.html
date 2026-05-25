@@ -40,15 +40,54 @@
         .btn{padding:10px 16px;border:none;border-radius:8px;font-weight:600;cursor:pointer;transition:.2s;font-size:.9rem}
         .btn-g{background:var(--success);color:#fff}.btn-s{background:#334155;color:#fff}.btn-r{background:var(--danger);color:#fff}
         .btn:hover{filter:brightness(1.1);transform:translateY(-1px)}
+        .hidden{display:none!important}
+        .ov{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+        .mod{background:var(--surface);padding:32px;border-radius:16px;max-width:500px;width:90%;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.5)}
         @keyframes pulse{0%,100%{opacity:.8}50%{opacity:.3}}
         @media(max-width:600px){.header{flex-direction:column;text-align:center}.scores-grid{gap:10px}.sc-val{font-size:1.1rem}}
     </style>
 </head>
 <body>
+    <div id="customModal" class="ov hidden">
+        <div class="mod">
+            <h2 style="margin-bottom:16px;color:var(--warning)">🎨 Personnalisation</h2>
+            <div style="text-align:left;margin:20px 0">
+                <div style="margin-bottom:20px">
+                    <label style="font-weight:700;display:block;margin-bottom:8px">Thème :</label>
+                    <select id="themeSelect" style="width:100%;padding:10px;border-radius:6px;background:#0f172a;color:#fff;border:1px solid #334155">
+                        <option value="default">Défaut</option>
+                        <option value="neon">Néon</option>
+                        <option value="retro">Rétro</option>
+                        <option value="minimal">Minimaliste</option>
+                        <option value="nature">Nature</option>
+                    </select>
+                </div>
+                <div style="margin-bottom:20px">
+                    <label style="font-weight:700;display:block;margin-bottom:8px">Symboles :</label>
+                    <select id="symbolSelect" style="width:100%;padding:10px;border-radius:6px;background:#0f172a;color:#fff;border:1px solid #334155">
+                        <option value="classic">Classique (X / O)</option>
+                        <option value="stars">Étoiles (★ / ♦)</option>
+                        <option value="elements">Éléments (🔥 / 💧)</option>
+                        <option value="shapes">Formes (● / ■)</option>
+                        <option value="arrows">Flèches (▲ / ▼)</option>
+                        <option value="moon">Soleil/Lune (☀ / ☽)</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px">
+                <button class="btn btn-g" style="flex:1" onclick="bot.saveCustomization()">💾 Sauvegarder</button>
+                <button class="btn btn-s" style="flex:1" onclick="bot.closeCustomModal()">❌ Annuler</button>
+            </div>
+        </div>
+    </div>
+
     <div class="app">
         <div class="header">
             <div class="title">🤖 Training Bot</div>
-            <div class="nav-link"><a href="index.html">🌐 Retour Arena Online</a></div>
+            <div style="display:flex;gap:8px">
+                <button class="btn btn-s" onclick="bot.openCustomModal()">🎨 Personnaliser</button>
+                <div class="nav-link"><a href="index.html">🌐 Retour Arena Online</a></div>
+            </div>
         </div>
 
         <div class="panel">
@@ -147,10 +186,109 @@
         const S=20,W=6,DIRS=[[0,1],[1,0],[1,1],[1,-1]];
         const SC={FIVE:1000000,OPEN_FOUR:500000,FOUR:100000,OPEN_THREE:25000,THREE:4000,OPEN_TWO:800,TWO:150,ONE:10};
 
+        // ═══════════════════════════════════════════════════════════════
+        // SYSTÈME DE PERSONNALISATION VISUELLE
+        // ═══════════════════════════════════════════════════════════════
+        const THEMES = {
+            default: {
+                name: 'Défaut',
+                bg: '#0b1120',
+                surface: '#1e293b',
+                primary: '#6366f1',
+                secondary: '#ec4899',
+                cell: '#1e293b',
+                cellHover: '#334155'
+            },
+            neon: {
+                name: 'Néon',
+                bg: '#0a0015',
+                surface: '#1a0033',
+                primary: '#00ffff',
+                secondary: '#ff00ff',
+                cell: '#2a0055',
+                cellHover: '#3d0077'
+            },
+            retro: {
+                name: 'Rétro',
+                bg: '#1a1a1a',
+                surface: '#2d2d2d',
+                primary: '#ff6b35',
+                secondary: '#f7931e',
+                cell: '#3d3d3d',
+                cellHover: '#4d4d4d'
+            },
+            minimal: {
+                name: 'Minimaliste',
+                bg: '#ffffff',
+                surface: '#f5f5f5',
+                primary: '#000000',
+                secondary: '#666666',
+                cell: '#e8e8e8',
+                cellHover: '#d8d8d8'
+            },
+            nature: {
+                name: 'Nature',
+                bg: '#1a2f1a',
+                surface: '#2d4a2d',
+                primary: '#4caf50',
+                secondary: '#8bc34a',
+                cell: '#3d5a3d',
+                cellHover: '#4d6a4d'
+            }
+        };
+
+        const SYMBOLS = {
+            classic: { x: 'X', o: 'O', name: 'Classique' },
+            stars: { x: '★', o: '♦', name: 'Étoiles' },
+            elements: { x: '🔥', o: '💧', name: 'Éléments' },
+            shapes: { x: '●', o: '■', name: 'Formes' },
+            arrows: { x: '▲', o: '▼', name: 'Flèches' },
+            moon: { x: '☀', o: '☽', name: 'Soleil/Lune' }
+        };
+
+        function applyTheme(themeName) {
+            const theme = THEMES[themeName] || THEMES.default;
+            const root = document.documentElement;
+            
+            root.style.setProperty('--bg', theme.bg);
+            root.style.setProperty('--surface', theme.surface);
+            root.style.setProperty('--primary', theme.primary);
+            root.style.setProperty('--secondary', theme.secondary);
+            
+            if (themeName === 'minimal') {
+                root.style.setProperty('--text', '#000000');
+            } else {
+                root.style.setProperty('--text', '#f8fafc');
+            }
+            
+            localStorage.setItem('m_train_theme', themeName);
+        }
+
+        function applySymbols(symbolSet) {
+            const symbols = SYMBOLS[symbolSet] || SYMBOLS.classic;
+            localStorage.setItem('m_train_symbols', symbolSet);
+            return symbols;
+        }
+
+        function getStoredPreferences() {
+            return {
+                theme: localStorage.getItem('m_train_theme') || 'default',
+                symbols: localStorage.getItem('m_train_symbols') || 'classic'
+            };
+        }
+        // ═══════════════════════════════════════════════════════════════
+
         class Bot{
             constructor(){
                 this.bd=Array(S*S).fill(null);this.act=true;this.aiTurn=false;this.diff='medium';this.z=1;this.last=null;
                 this.sc=JSON.parse(localStorage.getItem('m_train_sc'))||{X:0,O:0,D:0};
+                
+                // Préférences visuelles
+                const prefs = getStoredPreferences();
+                this.currentTheme = prefs.theme;
+                this.currentSymbols = applySymbols(prefs.symbols);
+                applyTheme(this.currentTheme);
+                
                 this.updScoreUI();this.mkBoard();
             }
             mkBoard(){const b=document.getElementById('bd');b.innerHTML='';for(let i=0;i<S*S;i++){const c=document.createElement('div');c.className='cell';c.dataset.i=i;c.onclick=()=>this.click(i);b.appendChild(c)}}
@@ -167,7 +305,13 @@
             }
             
             move(i,p){
-                this.bd[i]=p;const c=document.querySelector(`.cell[data-i="${i}"]`);c.textContent=p;c.classList.add(p.toLowerCase(),'taken');
+                this.bd[i]=p;
+                const c=document.querySelector(`.cell[data-i="${i}"]`);
+                
+                // Utiliser les symboles personnalisés
+                c.textContent = p === 'X' ? this.currentSymbols.x : this.currentSymbols.o;
+                c.classList.add(p.toLowerCase(),'taken');
+                
                 if(this.last!==null)document.querySelector(`.cell[data-i="${this.last}"]`)?.classList.remove('last');
                 c.classList.add('last');this.last=i;
                 
@@ -241,6 +385,36 @@
             }
 
             scTh(count,open){if(count>=W-1)return SC.FIVE;if(count===W-2)return open===2?SC.OPEN_FOUR:(open===1?SC.FOUR:0);if(count===W-3)return open===2?SC.OPEN_THREE:(open===1?SC.THREE:0);if(count===W-4)return open===2?SC.OPEN_TWO:(open===1?SC.TWO:0);return count===0&&open>0?SC.ONE:0}
+            
+            openCustomModal() {
+                document.getElementById('themeSelect').value = this.currentTheme;
+                document.getElementById('symbolSelect').value = localStorage.getItem('m_train_symbols') || 'classic';
+                document.getElementById('customModal').classList.remove('hidden');
+            }
+
+            closeCustomModal() {
+                document.getElementById('customModal').classList.add('hidden');
+            }
+
+            saveCustomization() {
+                const newTheme = document.getElementById('themeSelect').value;
+                const newSymbols = document.getElementById('symbolSelect').value;
+                
+                this.currentTheme = newTheme;
+                this.currentSymbols = applySymbols(newSymbols);
+                applyTheme(newTheme);
+                
+                // Re-rendre le plateau avec les nouveaux symboles
+                document.querySelectorAll('.cell').forEach((c, i) => {
+                    if (this.bd[i] === 'X') {
+                        c.textContent = this.currentSymbols.x;
+                    } else if (this.bd[i] === 'O') {
+                        c.textContent = this.currentSymbols.o;
+                    }
+                });
+                
+                this.closeCustomModal();
+            }
         }
         const bot=new Bot();
     </script>
