@@ -199,6 +199,14 @@
         const S = 20, W = 6;
 
         // ═══════════════════════════════════════════════════════════════
+        // SYSTÈME DE RECONNEXION
+        // ═══════════════════════════════════════════════════════════════
+        const RECONNECTION_TIMEOUT = 180000; // 3 minutes en millisecondes
+        const HEARTBEAT_INTERVAL = 15000; // 15 secondes
+        const DISCONNECT_THRESHOLD = 45000; // 45 secondes sans heartbeat = déconnecté
+        // ═══════════════════════════════════════════════════════════════
+
+        // ═══════════════════════════════════════════════════════════════
         // SYSTÈME DE RANGS ELO
         // ═══════════════════════════════════════════════════════════════
         const RANKS = {
@@ -420,6 +428,10 @@
                 this.inviteTimeouts = {};
                 this.chatUnsub = null;
                 this.currentChatMode = 'global';
+                
+                // Système de reconnexion
+                this.reconnectionTimer = null;
+                this.opponentPresenceUnsub = null;
                 
                 // Préférences visuelles
                 const prefs = getStoredPreferences();
@@ -855,15 +867,45 @@
                         if (this.currentChatMode !== 'private') {
                             this.initChat('private');
                         }
+                        
+                        // Surveiller la présence de l'adversaire
+                        this.monitorOpponentPresence();
+                    } else if (d.st === 'paused_disconnection') {
+                        // Partie en pause à cause d'une déconnexion
+                        ffBtn.disabled = false;
+                        const disconnectedPlayer = d.disconnectedPlayer;
+                        const isMe = disconnectedPlayer === this.p;
+                        
+                        if (isMe) {
+                            st.innerHTML = '<span style="color:var(--warning)">🔌 Reconnexion en cours...</span>';
+                            // Si c'est moi qui me reconnecte, reprendre la partie
+                            this.resumeGame();
+                        } else {
+                            // L'adversaire est déconnecté
+                            const deadline = d.reconnectionDeadline || 0;
+                            const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+                            st.innerHTML = `<span style="color:var(--warning)">⏸️ EN PAUSE<br/>⏳ En attente de ${disconnectedPlayer}... (${Math.floor(remaining / 60)}:${(remaining % 60).toString().padStart(2, '0')})</span>`;
+                            
+                            // Démarrer le compte à rebours
+                            this.startReconnectionCountdown(deadline);
+                        }
                     } else if (d.st === 'finished') {
                         let msg = '';
                         if (d.w === 'draw') {
                             msg = '🤝 ÉGALITÉ';
                         } else if (d.w === this.gs.sym) {
-                            msg = '🏆 VICTOIRE !';
+                            if (d.winReason === 'opponent_disconnected') {
+                                msg = '🏆 VICTOIRE PAR FORFAIT !';
+                            } else {
+                                msg = '🏆 VICTOIRE !';
+                            }
                             playSound('win'); // Son de victoire
                         } else {
-                            msg = '😢 DÉFAITE';
+                            if (d.winReason === 'opponent_disconnected') {
+                                msg = '😢 DÉFAITE PAR DÉCONNEXION';
+                            } else {
+                                msg = '😢 DÉFAITE';
+                            }
                             playSound('lose'); // Son de défaite
                         }
                         st.innerHTML = `<span style="color:${d.w === this.gs.sym ? 'var(--success)' : d.w === 'draw' ? 'var(--warning)' : 'var(--danger)'}">${msg}</span>`;
@@ -940,6 +982,119 @@
                 playSound('lose'); // Son d'abandon
                 await updateDoc(doc(db, 'games', this.gs.id), { st: 'finished', w: this.gs.sym === 'X' ? 'O' : 'X' });
             }
+
+            // ═══════════════════════════════════════════════════════════════
+            // SYSTÈME DE RECONNEXION
+            // ═══════════════════════════════════════════════════════════════
+
+            monitorOpponentPresence() {
+                if (!this.gs.opp || this.opponentPresenceUnsub) return;
+                
+                this.opponentPresenceUnsub = onSnapshot(doc(db, 'presence', this.gs.opp), async (snap) => {
+                    if (!this.gs.id || !this.gs.opp) return;
+                    
+                    const gameSnap = await getDoc(doc(db, 'games', this.gs.id));
+                    if (!gameSnap.exists() || gameSnap.data().st !== 'active') return;
+                    
+                    const now = Date.now();
+                    const lastSeen = snap.exists() ? snap.data().t : 0;
+                    const timeSinceLastSeen = now - lastSeen;
+                    
+                    // Si l'adversaire n'a pas donné signe de vie depuis 45 secondes
+                    if (timeSinceLastSeen > DISCONNECT_THRESHOLD) {
+                        await this.pauseGameForDisconnection(this.gs.opp);
+                    }
+                });
+            }
+
+            async pauseGameForDisconnection(disconnectedPlayer) {
+                if (!this.gs.id) return;
+                
+                try {
+                    const gameRef = doc(db, 'games', this.gs.id);
+                    const gameSnap = await getDoc(gameRef);
+                    
+                    // Vérifier que la partie est toujours active
+                    if (!gameSnap.exists() || gameSnap.data().st !== 'active') return;
+                    
+                    // Mettre la partie en pause
+                    await updateDoc(gameRef, {
+                        st: 'paused_disconnection',
+                        disconnectedPlayer: disconnectedPlayer,
+                        disconnectedAt: Date.now(),
+                        reconnectionDeadline: Date.now() + RECONNECTION_TIMEOUT
+                    });
+                    
+                    this.notif(`${disconnectedPlayer} s'est déconnecté. Partie en pause.`);
+                    playSound('notif');
+                } catch (e) {
+                    console.error('Error pausing game:', e);
+                }
+            }
+
+            async resumeGame() {
+                if (!this.gs.id) return;
+                
+                try {
+                    const gameRef = doc(db, 'games', this.gs.id);
+                    const gameSnap = await getDoc(gameRef);
+                    
+                    if (!gameSnap.exists()) return;
+                    const data = gameSnap.data();
+                    
+                    if (data.st === 'paused_disconnection' && data.disconnectedPlayer === this.p) {
+                        // Reprendre la partie
+                        await updateDoc(gameRef, {
+                            st: 'active',
+                            disconnectedPlayer: null,
+                            disconnectedAt: null,
+                            reconnectionDeadline: null
+                        });
+                        
+                        this.notif('✅ Reconnexion réussie ! La partie reprend.');
+                        playSound('win');
+                    }
+                } catch (e) {
+                    console.error('Error resuming game:', e);
+                }
+            }
+
+            startReconnectionCountdown(deadline) {
+                // Nettoyer l'ancien timer
+                if (this.reconnectionTimer) {
+                    clearInterval(this.reconnectionTimer);
+                }
+                
+                this.reconnectionTimer = setInterval(async () => {
+                    if (!this.gs.id) {
+                        clearInterval(this.reconnectionTimer);
+                        return;
+                    }
+                    
+                    const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+                    const st = document.getElementById('st');
+                    
+                    if (remaining > 0) {
+                        st.innerHTML = `<span style="color:var(--warning)">⏸️ EN PAUSE<br/>⏳ En attente de reconnexion... (${Math.floor(remaining / 60)}:${(remaining % 60).toString().padStart(2, '0')})</span>`;
+                    } else {
+                        // Temps écoulé, victoire par défaut
+                        clearInterval(this.reconnectionTimer);
+                        
+                        const gameSnap = await getDoc(doc(db, 'games', this.gs.id));
+                        if (gameSnap.exists() && gameSnap.data().st === 'paused_disconnection') {
+                            await updateDoc(doc(db, 'games', this.gs.id), {
+                                st: 'finished',
+                                w: this.gs.sym, // Victoire pour moi
+                                winReason: 'opponent_disconnected'
+                            });
+                            
+                            this.notif('⏱️ Temps écoulé. Victoire par forfait !');
+                        }
+                    }
+                }, 1000);
+            }
+
+            // ═══════════════════════════════════════════════════════════════
 
             async updateElo(winner) {
                 try {
@@ -1124,6 +1279,8 @@
             async reset() {
                 if (this.gameUnsub) { this.gameUnsub(); this.gameUnsub = null; }
                 if (this.rematchUnsub) { this.rematchUnsub(); this.rematchUnsub = null; }
+                if (this.opponentPresenceUnsub) { this.opponentPresenceUnsub(); this.opponentPresenceUnsub = null; }
+                if (this.reconnectionTimer) { clearInterval(this.reconnectionTimer); this.reconnectionTimer = null; }
                 
                 const oldGameId = this.gs.id;
                 this.gs = { id: null, sym: null, bd: Array(S*S).fill(''), act: false, turn: false, z: this.gs.z, opp: null };
@@ -1206,6 +1363,8 @@
                 if (this.gameUnsub) this.gameUnsub();
                 if (this.rematchUnsub) this.rematchUnsub();
                 if (this.chatUnsub) this.chatUnsub();
+                if (this.opponentPresenceUnsub) this.opponentPresenceUnsub();
+                if (this.reconnectionTimer) clearInterval(this.reconnectionTimer);
                 Object.values(this.inviteTimeouts).forEach(t => clearTimeout(t));
 
                 try {
