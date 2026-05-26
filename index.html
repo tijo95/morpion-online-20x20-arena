@@ -455,9 +455,11 @@
                 document.getElementById('main').classList.remove('hidden');
 
                 await setDoc(doc(db, 'presence', this.p), { t: Date.now() });
+                
+                // NE PAS écraser currentGame ici pour permettre la reconnexion !
+                // On utilise merge:true et on n'inclut PAS currentGame
                 await setDoc(doc(db, 'players', this.p), { 
-                    name: this.p, 
-                    currentGame: null,
+                    name: this.p,
                     elo: STARTING_ELO,
                     rank: 'BRONZE'
                 }, { merge: true });
@@ -1375,6 +1377,8 @@
                 this.initChat('global');
 
                 try {
+                    // Nettoyer currentGame seulement quand on quitte volontairement
+                    console.log('🧹 Reset: nettoyage de currentGame');
                     await updateDoc(doc(db, 'players', this.p), { currentGame: null });
                     
                     if (oldGameId) {
@@ -1447,8 +1451,12 @@
                 Object.values(this.inviteTimeouts).forEach(t => clearTimeout(t));
 
                 try {
+                    // Supprimer seulement la présence, PAS le currentGame
+                    // (pour permettre la reconnexion)
                     await deleteDoc(doc(db, 'presence', this.p));
-                    await updateDoc(doc(db, 'players', this.p), { currentGame: null });
+                    
+                    // NE PAS mettre currentGame à null ici !
+                    // await updateDoc(doc(db, 'players', this.p), { currentGame: null });
                 } catch (e) {
                     console.error('Cleanup error:', e);
                 }
