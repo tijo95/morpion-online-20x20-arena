@@ -536,25 +536,42 @@
                 this.initEmojiPicker();
                 
                 // CORRECTION BUG : Vérifier si le joueur a une partie en cours (reconnexion)
-                const playerSnap = await getDoc(doc(db, 'players', this.p));
-                if (playerSnap.exists() && playerSnap.data().currentGame) {
-                    const existingGameId = playerSnap.data().currentGame;
-                    const gameSnap = await getDoc(doc(db, 'games', existingGameId));
+                console.log('🔍 Vérification de partie en cours...');
+                try {
+                    const playerSnap = await getDoc(doc(db, 'players', this.p));
+                    console.log('👤 Player data:', playerSnap.exists() ? playerSnap.data() : 'not found');
                     
-                    if (gameSnap.exists()) {
-                        const gameData = gameSnap.data();
-                        // Charger la partie si elle est active ou en pause
-                        if (gameData.st === 'active' || gameData.st === 'paused_disconnection' || gameData.st === 'waiting') {
-                            this.loadGame(existingGameId);
-                            this.notif('🔄 Partie en cours retrouvée !');
+                    if (playerSnap.exists() && playerSnap.data().currentGame) {
+                        const existingGameId = playerSnap.data().currentGame;
+                        console.log('🎮 Partie trouvée:', existingGameId);
+                        
+                        const gameSnap = await getDoc(doc(db, 'games', existingGameId));
+                        console.log('📊 Game data:', gameSnap.exists() ? gameSnap.data() : 'not found');
+                        
+                        if (gameSnap.exists()) {
+                            const gameData = gameSnap.data();
+                            console.log('📍 Game status:', gameData.st);
+                            
+                            // Charger la partie si elle est active ou en pause
+                            if (gameData.st === 'active' || gameData.st === 'paused_disconnection' || gameData.st === 'waiting' || gameData.st === 'invitation_pending') {
+                                console.log('✅ Chargement de la partie...');
+                                this.loadGame(existingGameId);
+                                this.notif('🔄 Partie en cours retrouvée !');
+                            } else {
+                                console.log('❌ Partie terminée, nettoyage...');
+                                // Si la partie est terminée, nettoyer
+                                await updateDoc(doc(db, 'players', this.p), { currentGame: null });
+                            }
                         } else {
-                            // Si la partie est terminée, nettoyer
+                            console.log('❌ Partie n\'existe plus, nettoyage...');
+                            // Si la partie n'existe plus, nettoyer
                             await updateDoc(doc(db, 'players', this.p), { currentGame: null });
                         }
                     } else {
-                        // Si la partie n'existe plus, nettoyer
-                        await updateDoc(doc(db, 'players', this.p), { currentGame: null });
+                        console.log('ℹ️ Pas de partie en cours');
                     }
+                } catch (error) {
+                    console.error('❌ Erreur lors de la vérification:', error);
                 }
             }
 
@@ -1057,27 +1074,40 @@
             }
 
             async resumeGame() {
-                if (!this.gs.id) return;
+                console.log('🔄 resumeGame() appelée');
+                if (!this.gs.id) {
+                    console.log('❌ Pas de gs.id');
+                    return;
+                }
                 
                 try {
                     const gameRef = doc(db, 'games', this.gs.id);
                     const gameSnap = await getDoc(gameRef);
                     
-                    if (!gameSnap.exists()) return;
+                    if (!gameSnap.exists()) {
+                        console.log('❌ Game n\'existe pas');
+                        return;
+                    }
                     const data = gameSnap.data();
+                    console.log('📊 Game data:', data);
                     
                     if (data.st === 'paused_disconnection' && data.disconnectedPlayer === this.p) {
+                        console.log('✅ Je suis le joueur déconnecté, reprise...');
+                        
                         // Vérifier qu'on est dans le délai de reconnexion
                         const now = Date.now();
                         const deadline = data.reconnectionDeadline || 0;
+                        console.log('⏱️ Maintenant:', now, 'Deadline:', deadline);
                         
                         if (now > deadline) {
                             // Trop tard, la partie est perdue
+                            console.log('❌ Trop tard !');
                             this.notif('❌ Délai de reconnexion dépassé. Partie perdue.');
                             return;
                         }
                         
                         // Reprendre la partie
+                        console.log('✅ Reprise de la partie...');
                         await updateDoc(gameRef, {
                             st: 'active',
                             disconnectedPlayer: null,
@@ -1097,9 +1127,11 @@
                         
                         this.notif('✅ Reconnexion réussie ! La partie reprend.');
                         playSound('win');
+                    } else {
+                        console.log('ℹ️ Pas de reprise nécessaire');
                     }
                 } catch (e) {
-                    console.error('Error resuming game:', e);
+                    console.error('❌ Error resuming game:', e);
                 }
             }
 
