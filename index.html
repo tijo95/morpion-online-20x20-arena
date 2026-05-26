@@ -534,6 +534,28 @@
                 
                 // Initialiser le sélecteur d'emojis
                 this.initEmojiPicker();
+                
+                // CORRECTION BUG : Vérifier si le joueur a une partie en cours (reconnexion)
+                const playerSnap = await getDoc(doc(db, 'players', this.p));
+                if (playerSnap.exists() && playerSnap.data().currentGame) {
+                    const existingGameId = playerSnap.data().currentGame;
+                    const gameSnap = await getDoc(doc(db, 'games', existingGameId));
+                    
+                    if (gameSnap.exists()) {
+                        const gameData = gameSnap.data();
+                        // Charger la partie si elle est active ou en pause
+                        if (gameData.st === 'active' || gameData.st === 'paused_disconnection' || gameData.st === 'waiting') {
+                            this.loadGame(existingGameId);
+                            this.notif('🔄 Partie en cours retrouvée !');
+                        } else {
+                            // Si la partie est terminée, nettoyer
+                            await updateDoc(doc(db, 'players', this.p), { currentGame: null });
+                        }
+                    } else {
+                        // Si la partie n'existe plus, nettoyer
+                        await updateDoc(doc(db, 'players', this.p), { currentGame: null });
+                    }
+                }
             }
 
             // ═══════════════════════════════════════════════════════════════
@@ -879,15 +901,17 @@
                         if (isMe) {
                             st.innerHTML = '<span style="color:var(--warning)">🔌 Reconnexion en cours...</span>';
                             // Si c'est moi qui me reconnecte, reprendre la partie
-                            this.resumeGame();
+                            await this.resumeGame();
                         } else {
                             // L'adversaire est déconnecté
                             const deadline = d.reconnectionDeadline || 0;
                             const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
-                            st.innerHTML = `<span style="color:var(--warning)">⏸️ EN PAUSE<br/>⏳ En attente de ${disconnectedPlayer}... (${Math.floor(remaining / 60)}:${(remaining % 60).toString().padStart(2, '0')})</span>`;
+                            const minutes = Math.floor(remaining / 60);
+                            const seconds = (remaining % 60).toString().padStart(2, '0');
+                            st.innerHTML = `<span style="color:var(--warning)">⏸️ PARTIE EN PAUSE<br/>⏳ En attente de reconnexion de <strong>${disconnectedPlayer}</strong><br/>Temps restant : ${minutes}:${seconds}</span>`;
                             
                             // Démarrer le compte à rebours
-                            this.startReconnectionCountdown(deadline);
+                            this.startReconnectionCountdown(deadline, disconnectedPlayer);
                         }
                     } else if (d.st === 'finished') {
                         let msg = '';
@@ -1043,6 +1067,16 @@
                     const data = gameSnap.data();
                     
                     if (data.st === 'paused_disconnection' && data.disconnectedPlayer === this.p) {
+                        // Vérifier qu'on est dans le délai de reconnexion
+                        const now = Date.now();
+                        const deadline = data.reconnectionDeadline || 0;
+                        
+                        if (now > deadline) {
+                            // Trop tard, la partie est perdue
+                            this.notif('❌ Délai de reconnexion dépassé. Partie perdue.');
+                            return;
+                        }
+                        
                         // Reprendre la partie
                         await updateDoc(gameRef, {
                             st: 'active',
@@ -1050,6 +1084,16 @@
                             disconnectedAt: null,
                             reconnectionDeadline: null
                         });
+                        
+                        // Envoyer un message dans le tchat pour notifier l'adversaire
+                        if (this.gs.opp) {
+                            await setDoc(doc(collection(db, `games/${this.gs.id}/chat`)), {
+                                author: 'Système',
+                                text: `${this.p} s'est reconnecté. La partie reprend !`,
+                                timestamp: Date.now(),
+                                rankIcon: '🔌'
+                            });
+                        }
                         
                         this.notif('✅ Reconnexion réussie ! La partie reprend.');
                         playSound('win');
@@ -1059,7 +1103,7 @@
                 }
             }
 
-            startReconnectionCountdown(deadline) {
+            startReconnectionCountdown(deadline, disconnectedPlayer) {
                 // Nettoyer l'ancien timer
                 if (this.reconnectionTimer) {
                     clearInterval(this.reconnectionTimer);
@@ -1075,7 +1119,9 @@
                     const st = document.getElementById('st');
                     
                     if (remaining > 0) {
-                        st.innerHTML = `<span style="color:var(--warning)">⏸️ EN PAUSE<br/>⏳ En attente de reconnexion... (${Math.floor(remaining / 60)}:${(remaining % 60).toString().padStart(2, '0')})</span>`;
+                        const minutes = Math.floor(remaining / 60);
+                        const seconds = (remaining % 60).toString().padStart(2, '0');
+                        st.innerHTML = `<span style="color:var(--warning)">⏸️ PARTIE EN PAUSE<br/>⏳ En attente de reconnexion de <strong>${disconnectedPlayer}</strong><br/>Temps restant : ${minutes}:${seconds}</span>`;
                     } else {
                         // Temps écoulé, victoire par défaut
                         clearInterval(this.reconnectionTimer);
@@ -1089,6 +1135,7 @@
                             });
                             
                             this.notif('⏱️ Temps écoulé. Victoire par forfait !');
+                            playSound('win');
                         }
                     }
                 }, 1000);
