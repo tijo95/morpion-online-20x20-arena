@@ -69,6 +69,7 @@
         .cell.x{color:var(--primary);background:rgba(99,102,241,.15)}
         .cell.o{color:var(--secondary);background:rgba(236,72,153,.15)}
         .cell.win{background:var(--success)!important;color:#042f1a;transform:scale(1.05);z-index:2;box-shadow:0 0 15px rgba(16,185,129,.6)}
+        .cell.last::after{content:'';position:absolute;inset:2px;border:2px solid var(--warning);border-radius:3px;animation:pulse 2s infinite;z-index:1;pointer-events:none}
         .cell.off{cursor:default;opacity:.8}
         .ctrls{display:flex;gap:8px;margin-top:8px;justify-content:center}
         .btn{padding:10px 16px;border:none;border-radius:8px;font-weight:600;cursor:pointer;transition:.2s;font-size:.9rem}
@@ -892,7 +893,7 @@
                     this.gs.turn = d.t === this.gs.sym;
                     this.gs.act = d.st === 'active';
 
-                    this.render();
+                    this.render(d.lastMove ?? null);
 
                     const st = document.getElementById('st');
                     const ffBtn = document.getElementById('ffBtn');
@@ -1011,7 +1012,7 @@
                 
                 const draw = !win && !nb.includes('');
                 const nextTurn = this.gs.sym === 'X' ? 'O' : 'X';
-                const u = { bd: nb, t: nextTurn };
+                const u = { bd: nb, t: nextTurn, lastMove: i };
                 if (win || draw) { 
                     u.st = 'finished'; 
                     u.w = draw ? 'draw' : this.gs.sym;
@@ -1392,7 +1393,7 @@
                 }
             }
 
-            render() {
+            render(lastMove = null) {
                 document.querySelectorAll('.cell').forEach((c, i) => {
                     const value = this.gs.bd[i] || '';
                     c.className = 'cell';
@@ -1406,6 +1407,11 @@
                         c.classList.add('o', 'taken');
                     } else {
                         c.textContent = '';
+                    }
+                    
+                    // Surbrillance du dernier coup
+                    if (lastMove !== null && i === lastMove) {
+                        c.classList.add('last');
                     }
                     
                     if (this.gs.id && !this.gs.turn) c.classList.add('off');
