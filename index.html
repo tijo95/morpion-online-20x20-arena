@@ -902,6 +902,12 @@
                         st.textContent = '⏳ En attente d\'adversaire...';
                         ffBtn.disabled = true;
                     } else if (d.st === 'active') {
+                        // Stopper le timer de reconnexion si la partie reprend
+                        if (this.reconnectionTimer) {
+                            clearInterval(this.reconnectionTimer);
+                            this.reconnectionTimer = null;
+                        }
+                        
                         ffBtn.disabled = false;
                         st.innerHTML = this.gs.turn ? '<span style="color:var(--warning)">⚡ À VOUS DE JOUER</span>' : `⏳ Tour de ${d.t === 'X' ? d.pX : d.pO}`;
                         
@@ -911,6 +917,11 @@
                         }
                         
                         // Surveiller la présence de l'adversaire
+                        // Réinitialiser pour relancer la surveillance après une reconnexion
+                        if (this.opponentPresenceUnsub) {
+                            this.opponentPresenceUnsub();
+                            this.opponentPresenceUnsub = null;
+                        }
                         this.monitorOpponentPresence();
                     } else if (d.st === 'paused_disconnection') {
                         // Partie en pause à cause d'une déconnexion
