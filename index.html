@@ -29,6 +29,23 @@
         .lb-s{font-weight:700;color:var(--primary)}
         .lb-i.me{border:1px solid var(--warning);background:rgba(245,158,11,.1)}
 
+        /* LIVE GAMES */
+        .live-section{padding:8px;border-bottom:1px solid #334155}
+        .live-title{font-size:.8rem;font-weight:700;color:var(--danger);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+        .live-dot{width:8px;height:8px;background:var(--danger);border-radius:50%;animation:pulse 1s infinite;flex-shrink:0}
+        .live-item{display:flex;align-items:center;justify-content:space-between;padding:7px 8px;background:#0f172a;border-radius:6px;margin-bottom:4px;font-size:.78rem;gap:6px}
+        .live-players{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+        .live-watchers{color:#94a3b8;font-size:.72rem;flex-shrink:0}
+        .live-watch-btn{background:var(--danger);color:#fff;border:none;padding:4px 8px;border-radius:5px;cursor:pointer;font-size:.75rem;font-weight:700;flex-shrink:0;transition:.2s}
+        .live-watch-btn:hover{filter:brightness(1.2)}
+        .live-empty{font-size:.75rem;opacity:.5;text-align:center;padding:8px}
+
+        /* SPECTATOR MODE */
+        .spectator-bar{background:rgba(239,68,68,.15);border:1px solid var(--danger);border-radius:8px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+        .spectator-info{display:flex;align-items:center;gap:8px;font-size:.85rem;font-weight:600}
+        .spectator-badge{background:var(--danger);color:#fff;padding:3px 8px;border-radius:4px;font-size:.75rem;font-weight:800}
+        .spectator-players{color:#94a3b8;font-size:.8rem}
+
         /* GAME AREA */
         .game{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--surface);border-radius:12px;padding:12px}
         .nav-link{text-align:center;margin-bottom:8px}
@@ -149,12 +166,24 @@
                 <div style="text-align:center;font-size:.75rem;opacity:.5;margin:4px 0">OU INVITER</div>
                 <div class="row"><input type="text" id="iIn" placeholder="Pseudo..." maxlength="15"><button id="invBtn" class="btn-sm btn-inv">📩</button></div>
             </div>
+            <div class="live-section">
+                <div class="live-title"><span class="live-dot"></span>PARTIES EN DIRECT</div>
+                <div id="liveGames"><div class="live-empty">Aucune partie en cours</div></div>
+            </div>
             <div class="lb" id="lb"></div>
         </aside>
         <main class="game">
             <div class="nav-link">
                 <a href="training.html">🤖 Aller au Training Bot</a>
                 <button class="btn btn-s" id="customBtn" style="margin-left:8px">🎨 Personnaliser</button>
+            </div>
+            <div id="spectatorBar" class="spectator-bar hidden">
+                <div class="spectator-info">
+                    <span class="spectator-badge">👁️ SPECTATEUR</span>
+                    <span id="spectatorPlayers" class="spectator-players"></span>
+                    <span id="spectatorCount" style="color:var(--danger);font-size:.8rem"></span>
+                </div>
+                <button class="btn btn-d" id="leaveSpectatorBtn" style="padding:6px 12px;font-size:.8rem">🚪 Quitter</button>
             </div>
             <div class="status" id="st">En attente...</div>
             <div class="game-container">
@@ -439,6 +468,11 @@
                 this.cachedElo = STARTING_ELO;
                 this.lastMessageTime = 0; // Anti-spam
                 
+                // Système spectateur
+                this.isSpectator = false;
+                this.spectatorUnsub = null;
+                this.liveGamesUnsub = null;
+                
                 // Préférences visuelles
                 const prefs = getStoredPreferences();
                 this.currentTheme = prefs.theme;
@@ -550,6 +584,9 @@
                 // Initialiser le sélecteur d'emojis
                 this.initEmojiPicker();
                 
+                // Démarrer la liste des parties en direct
+                this.watchLiveGames();
+                
                 // CORRECTION BUG : Vérifier si le joueur a une partie en cours (reconnexion)
                 console.log('🔍 Vérification de partie en cours...');
                 try {
@@ -615,7 +652,7 @@
                 picker.classList.toggle('hidden');
             }
             
-            initChat(mode) {
+            initChat(mode, gameId = null) {
                 if (this.chatUnsub) {
                     this.chatUnsub();
                     this.chatUnsub = null;
@@ -628,32 +665,38 @@
                 
                 if (mode === 'global') {
                     chatHeader.textContent = '💬 Tchat Global';
-                    
-                    // Écouter le tchat global (20 derniers messages)
                     this.chatUnsub = onSnapshot(
                         query(collection(db, 'chat_global'), orderBy('timestamp', 'desc'), limit(20)),
                         snapshot => {
-                            const messages = snapshot.docs.reverse().map(d => ({
-                                id: d.id,
-                                ...d.data()
-                            }));
+                            const messages = snapshot.docs.reverse().map(d => ({ id: d.id, ...d.data() }));
                             this.renderChatMessages(messages, 'global');
                         }
                     );
                 } else if (mode === 'private' && this.gs.id) {
                     chatHeader.textContent = `💬 Tchat avec ${this.gs.opp}`;
-                    
-                    // Écouter le tchat privé de la partie
                     this.chatUnsub = onSnapshot(
                         query(collection(db, `games/${this.gs.id}/chat`), orderBy('timestamp', 'asc')),
                         snapshot => {
-                            const messages = snapshot.docs.map(d => ({
-                                id: d.id,
-                                ...d.data()
-                            }));
+                            const messages = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                             this.renderChatMessages(messages, 'private');
                         }
                     );
+                } else if (mode === 'spectator' && gameId) {
+                    const targetId = gameId || this.gs.id;
+                    chatHeader.textContent = '👁️ Tchat Spectateurs';
+                    
+                    // Écouter le tchat des joueurs (lecture seule) + spectateurs
+                    this.chatUnsub = onSnapshot(
+                        query(collection(db, `games/${targetId}/chat_spectators`), orderBy('timestamp', 'asc')),
+                        snapshot => {
+                            const messages = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                            this.renderChatMessages(messages, 'spectator');
+                        }
+                    );
+                    
+                    // Mode tchat spectateur actif
+                    this.currentChatMode = 'spectator';
+                    this.spectatorChatGameId = targetId;
                 }
             }
             
@@ -716,6 +759,8 @@
                         await setDoc(doc(collection(db, 'chat_global')), msg);
                     } else if (this.currentChatMode === 'private' && this.gs.id) {
                         await setDoc(doc(collection(db, `games/${this.gs.id}/chat`)), msg);
+                    } else if (this.currentChatMode === 'spectator' && this.spectatorChatGameId) {
+                        await setDoc(doc(collection(db, `games/${this.spectatorChatGameId}/chat_spectators`)), msg);
                     }
                     
                     playSound('notif');
@@ -732,6 +777,163 @@
                 div.textContent = text;
                 return div.innerHTML;
             }
+
+            // ═══════════════════════════════════════════════════════════════
+            // SYSTÈME SPECTATEUR
+            // ═══════════════════════════════════════════════════════════════
+
+            watchLiveGames() {
+                if (this.liveGamesUnsub) this.liveGamesUnsub();
+                
+                this.liveGamesUnsub = onSnapshot(
+                    query(collection(db, 'games'), where('st', '==', 'active')),
+                    snap => {
+                        const container = document.getElementById('liveGames');
+                        const games = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                            .filter(g => g.pX && g.pO); // Doit avoir 2 joueurs
+                        
+                        if (games.length === 0) {
+                            container.innerHTML = '<div class="live-empty">Aucune partie en cours</div>';
+                            return;
+                        }
+                        
+                        container.innerHTML = games.map(g => {
+                            const watchers = g.spectators ? g.spectators.length : 0;
+                            const isMyGame = g.pX === this.p || g.pO === this.p;
+                            const watcherText = watchers > 0 ? `👀 ${watchers}` : '';
+                            
+                            return `<div class="live-item">
+                                <div class="live-players">${g.pX} vs ${g.pO}</div>
+                                <div class="live-watchers">${watcherText}</div>
+                                ${!isMyGame ? `<button class="live-watch-btn" onclick="gameApp.spectateGame('${g.id}', '${g.pX}', '${g.pO}')">👁️</button>` : '<span style="font-size:.7rem;opacity:.5">ma partie</span>'}
+                            </div>`;
+                        }).join('');
+                    }
+                );
+            }
+
+            async spectateGame(gameId, pX, pO) {
+                if (this.gs.id) {
+                    this.notif('Quittez votre partie avant de regarder !');
+                    return;
+                }
+                if (this.isSpectator && this.spectatorUnsub) {
+                    await this.leaveSpectator(false);
+                }
+                
+                this.isSpectator = true;
+                this.gs.id = gameId;
+                this.gs.opp = null;
+                this.gs.sym = null;
+                
+                // S'enregistrer comme spectateur
+                try {
+                    await runTransaction(db, async (tx) => {
+                        const gSnap = await tx.get(doc(db, 'games', gameId));
+                        if (!gSnap.exists()) throw new Error('Game not found');
+                        const spectators = gSnap.data().spectators || [];
+                        if (!spectators.includes(this.p)) {
+                            tx.update(doc(db, 'games', gameId), {
+                                spectators: [...spectators, this.p]
+                            });
+                        }
+                    });
+                } catch (e) {
+                    console.error('Error joining spectator:', e);
+                }
+                
+                // Afficher la barre spectateur
+                document.getElementById('spectatorBar').classList.remove('hidden');
+                document.getElementById('spectatorPlayers').textContent = `${pX} vs ${pO}`;
+                
+                // Désactiver les boutons de jeu
+                document.getElementById('sBtn').disabled = true;
+                document.getElementById('ffBtn').disabled = true;
+                
+                // Écouter la partie en direct
+                this.spectatorUnsub = onSnapshot(doc(db, 'games', gameId), g => {
+                    if (!g.exists()) {
+                        this.leaveSpectator(true);
+                        return;
+                    }
+                    
+                    const d = g.data();
+                    
+                    // Mettre à jour le compteur de spectateurs
+                    const count = d.spectators ? d.spectators.length : 0;
+                    document.getElementById('spectatorCount').textContent = count > 0 ? `👀 ${count} spectateur${count > 1 ? 's' : ''}` : '';
+                    
+                    // Afficher le plateau
+                    const sym = this.currentSymbols;
+                    document.querySelectorAll('.cell').forEach((c, i) => {
+                        const val = d.bd ? d.bd[i] : '';
+                        c.className = 'cell off'; // Lecture seule
+                        if (val === 'X') { c.textContent = sym.x; c.classList.add('x', 'taken'); }
+                        else if (val === 'O') { c.textContent = sym.o; c.classList.add('o', 'taken'); }
+                        else c.textContent = '';
+                        if (d.lastMove !== undefined && i === d.lastMove) c.classList.add('last');
+                    });
+                    
+                    // Afficher les cellules gagnantes
+                    if (d.winCells) {
+                        d.winCells.forEach(idx => {
+                            document.querySelector(`.cell[data-i="${idx}"]`)?.classList.add('win');
+                        });
+                    }
+                    
+                    // Statut de la partie
+                    const st = document.getElementById('st');
+                    if (d.st === 'active') {
+                        st.innerHTML = `👁️ <strong>${d.t === 'X' ? d.pX : d.pO}</strong> joue...`;
+                    } else if (d.st === 'finished') {
+                        const winner = d.w === 'draw' ? null : (d.w === 'X' ? d.pX : d.pO);
+                        st.innerHTML = d.w === 'draw' ? '🤝 Match nul' : `🏆 <strong>${winner}</strong> a gagné !`;
+                        setTimeout(() => this.leaveSpectator(true), 5000);
+                    }
+                    
+                    // Tchat spectateurs
+                    this.initChat('spectator', gameId);
+                });
+                
+                this.notif(`👁️ Vous regardez ${pX} vs ${pO}`);
+            }
+
+            async leaveSpectator(auto = false) {
+                if (!this.isSpectator) return;
+                
+                // Se retirer de la liste des spectateurs
+                if (this.gs.id) {
+                    try {
+                        const gSnap = await getDoc(doc(db, 'games', this.gs.id));
+                        if (gSnap.exists()) {
+                            const spectators = (gSnap.data().spectators || []).filter(s => s !== this.p);
+                            await updateDoc(doc(db, 'games', this.gs.id), { spectators });
+                        }
+                    } catch (e) { console.error(e); }
+                }
+                
+                if (this.spectatorUnsub) { this.spectatorUnsub(); this.spectatorUnsub = null; }
+                if (this.chatUnsub) { this.chatUnsub(); this.chatUnsub = null; }
+                
+                this.isSpectator = false;
+                this.gs.id = null;
+                
+                // Réinitialiser l'interface
+                document.getElementById('spectatorBar').classList.add('hidden');
+                document.getElementById('sBtn').disabled = false;
+                document.getElementById('st').textContent = 'En attente...';
+                document.querySelectorAll('.cell').forEach(c => {
+                    c.className = 'cell';
+                    c.textContent = '';
+                });
+                
+                // Revenir au tchat global
+                this.initChat('global');
+                
+                if (!auto) this.notif('Vous avez quitté le mode spectateur');
+            }
+
+            // ═══════════════════════════════════════════════════════════════
 
             openCustomModal() {
                 document.getElementById('themeSelect').value = this.currentTheme;
@@ -1393,6 +1595,7 @@
                 if (this.rematchUnsub) { this.rematchUnsub(); this.rematchUnsub = null; }
                 if (this.opponentPresenceUnsub) { this.opponentPresenceUnsub(); this.opponentPresenceUnsub = null; }
                 if (this.reconnectionTimer) { clearInterval(this.reconnectionTimer); this.reconnectionTimer = null; }
+                if (this.isSpectator) { await this.leaveSpectator(true); return; }
                 
                 const oldGameId = this.gs.id;
                 this.gs = { id: null, sym: null, bd: Array(S*S).fill(''), act: false, turn: false, z: this.gs.z, opp: null };
@@ -1484,6 +1687,8 @@
                 if (this.chatUnsub) this.chatUnsub();
                 if (this.opponentPresenceUnsub) this.opponentPresenceUnsub();
                 if (this.reconnectionTimer) clearInterval(this.reconnectionTimer);
+                if (this.spectatorUnsub) this.spectatorUnsub();
+                if (this.liveGamesUnsub) this.liveGamesUnsub();
                 Object.values(this.inviteTimeouts).forEach(t => clearTimeout(t));
 
                 try {
@@ -1518,6 +1723,7 @@
         document.getElementById('customBtn').onclick = () => gameApp.openCustomModal();
         document.getElementById('saveCustomBtn').onclick = () => gameApp.saveCustomization();
         document.getElementById('cancelCustomBtn').onclick = () => gameApp.closeCustomModal();
+        document.getElementById('leaveSpectatorBtn').onclick = () => gameApp.leaveSpectator(false);
 
         document.getElementById('chatSend').onclick = () => gameApp.sendChatMessage();
         document.getElementById('emojiBtn').onclick = () => gameApp.toggleEmojiPicker();
