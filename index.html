@@ -434,6 +434,11 @@
                 this.reconnectionTimer = null;
                 this.opponentPresenceUnsub = null;
                 
+                // Cache rang pour le tchat
+                this.cachedRankIcon = '🥉';
+                this.cachedElo = STARTING_ELO;
+                this.lastMessageTime = 0; // Anti-spam
+                
                 // Préférences visuelles
                 const prefs = getStoredPreferences();
                 this.currentTheme = prefs.theme;
@@ -498,6 +503,13 @@
                         const data = d.data();
                         const elo = data.elo || STARTING_ELO;
                         const rank = getRankFromElo(elo);
+                        
+                        // Mettre en cache le rang du joueur actuel
+                        if (d.id === this.p) {
+                            this.cachedRankIcon = rank.icon;
+                            this.cachedElo = elo;
+                        }
+                        
                         const cls = d.id === this.p ? 'lb-i me' : 'lb-i';
                         return `<div class="${cls}">
                             <div class="lb-r">${i + 1}</div>
@@ -678,19 +690,25 @@
                 
                 if (!text || text.length > 200) return;
                 
+                // Anti-spam : 1 seconde entre chaque message
+                const now = Date.now();
+                if (now - this.lastMessageTime < 1000) return;
+                this.lastMessageTime = now;
+                
                 // Fermer le sélecteur d'emojis
                 document.getElementById('emojiPicker').classList.add('hidden');
                 
-                // Récupérer le rang actuel du joueur
-                const playerDoc = await getDoc(doc(db, 'players', this.p));
-                const playerElo = playerDoc.data().elo || STARTING_ELO;
-                const playerRank = getRankFromElo(playerElo);
+                // Vider l'input immédiatement pour éviter les doubles envois
+                input.value = '';
+                
+                // Utiliser le rang en cache (mis à jour par le leaderboard)
+                const rankIcon = this.cachedRankIcon || '🥉';
                 
                 const msg = {
                     author: this.p,
                     text: text,
                     timestamp: Date.now(),
-                    rankIcon: playerRank.icon
+                    rankIcon: rankIcon
                 };
                 
                 try {
@@ -700,10 +718,11 @@
                         await setDoc(doc(collection(db, `games/${this.gs.id}/chat`)), msg);
                     }
                     
-                    input.value = '';
                     playSound('notif');
                 } catch (e) {
                     console.error('Error sending message:', e);
+                    // Remettre le texte si l'envoi a échoué
+                    input.value = text;
                     this.notif('Erreur lors de l\'envoi du message');
                 }
             }
